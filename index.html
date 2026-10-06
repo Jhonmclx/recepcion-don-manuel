@@ -70,7 +70,7 @@ pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);pa
 </head><body>
 <div class="wrap">
   <header><div><h1>Recepción de mercancía</h1><div class="sub">Mercados Don Manuel</div></div><div class="sub" id="status">Cargando productos…</div></header>
-  <nav><button data-tab="recibir" aria-selected="true">Recibir</button><button data-tab="hist" aria-selected="false">Historial</button></nav>
+  <nav><button data-tab="recibir" aria-selected="true">Recibir</button><button data-tab="fact" aria-selected="false">Factura</button><button data-tab="hist" aria-selected="false">Historial</button></nav>
 
   <section id="v-recibir" style="display:flex;flex-direction:column;gap:12px">
     <div class="row"><input id="h-proveedor" placeholder="Proveedor" autocomplete="off"><input id="h-factura" placeholder="Factura No." autocomplete="off"></div>
@@ -88,6 +88,25 @@ pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);pa
     <div class="sum" id="sum"></div>
     <div id="items"></div>
     <div class="btns" id="acts"></div>
+  </section>
+
+  <section id="v-fact" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel">
+      <b>Factura del proveedor</b>
+      <div class="btns">
+        <label class="btn scanbtn" for="fCam">📷 Tomar foto de la factura<input type="file" id="fCam" class="vh" accept="image/*" capture="environment"></label>
+        <label class="btn" for="fPick">🖼 Elegir foto(s)<input type="file" id="fPick" class="vh" accept="image/*" multiple></label>
+      </div>
+      <div class="note">Si la factura tiene varias páginas, cárguelas una por una: se suman a la misma factura.</div>
+      <div id="fPrev" hidden style="display:flex;flex-direction:column;gap:8px">
+        <canvas id="fCanvas" style="max-width:100%;max-height:55vh;object-fit:contain;border-radius:8px;border:1px solid var(--line);align-self:center"></canvas>
+        <div class="note"><b>Gire la foto hasta que las letras queden derechas</b> y toque Leer factura.</div>
+        <div class="btns"><button id="fRotL">⟲ Girar</button><button id="fRotR">⟳ Girar</button><button class="primary" id="fRead" style="flex:1">Leer factura</button><button class="ghost" id="fCancel">Cancelar</button></div>
+      </div>
+      <div class="note" id="fProg"></div>
+    </div>
+    <div id="fCmp"></div>
+    <div id="fTable"></div>
   </section>
 
   <section id="v-hist" hidden style="display:flex;flex-direction:column;gap:12px"><div id="hist"></div></section>
@@ -143,7 +162,7 @@ async function apiPost(b){const c=SRV.cfg;return (await fetch(c.url,{method:'POS
 async function flush(){ let q=LS.get('rdm-queue',[]); while(q.length){ try{ const r=await apiPost(q[0]); if(r&&r.error==='clave') break; }catch(e){ break; } q.shift(); LS.set('rdm-queue',q); } }
 window.addEventListener('online',flush);
 
-let dbBase=[], dbLearned=[];
+let dbBase=[], dbLearned=[], curBase=[];
 async function startStorage(){
   const use=window.claude?.use;
   const db= use ? await use('db').catch(()=>null) : null;
@@ -159,18 +178,18 @@ async function startStorage(){
   if(SRV.on){
     st.mode='srv'; flush();
     try{ const r=await apiGet('productos'); if(r.ok){ LS.set('rdm2-base',r.items); } }catch(e){}
-    rebuild(LS.get('rdm2-base',[]),local);
+    curBase=LS.get('rdm2-base',[]); rebuild(curBase,local);
     try{ const r=await apiGet('recepciones'); if(r.ok){ st.recs=r.recs; renderHist(); } }catch(e){}
     return;
   }
   let base=LS.get('rdm2-base',null);
   if(!base){ try{ base=(await (await fetch('catalogo.json')).json()).items; }catch(e){ base=[]; } }
-  rebuild(base,local); st.recs=LS.get('rdm2-recs',[]); renderHist();
+  curBase=base; rebuild(base,local); st.recs=LS.get('rdm2-recs',[]); renderHist();
 }
 async function learnProduct(code,name){
   const p={name,codes:[code]};
   if(st.mode==='db'){ try{ await st.db.collection('productos').doc(safeId('b'+code)).set({descripcion:name,barras:[code],proveedor:st.draft.proveedor||'',actualizado:Date.now()}); }catch(e){ toast('No se pudo guardar el producto en la base compartida.'); } return; }
-  const local=LS.get('rdm2-learned',[]); local.push(p); LS.set('rdm2-learned',local); rebuild(LS.get('rdm2-base',[]),local);
+  const local=LS.get('rdm2-learned',[]); local.push(p); LS.set('rdm2-learned',local); rebuild(curBase,local);
   if(st.mode==='srv'){ const q=LS.get('rdm-queue',[]); q.push({accion:'producto',p:{b:code,n:name,v:st.draft.proveedor||''}}); LS.set('rdm-queue',q); flush(); }
 }
 async function storeRec(rec){
@@ -187,7 +206,7 @@ function onCode(raw){
   const f=findName(code); beep(!!f);
   const ya=st.draft.lines.find(l=>l.barras===(f?f.code:code));
   $('#sheet').innerHTML = f
-    ? `<div class="pname">${esc(f.name)}</div><div class="pcode">${esc(code)}${ya?' · ya lleva <b>'+ya.cant+'</b>':''}</div>
+    ? `<div class="pname">${esc(f.name)}</div><div class="pcode">${esc(code)}${ya?' · ya lleva <b>'+ya.cant+'</b>':''}${(()=>{const g=groupFor(f.code,f.name);return g?' · <b>factura: '+g.qty+'</b>':(st.draft.fact&&st.draft.fact.length?' · <span class="chip">no está en la factura</span>':'');})()}</div>
        <div class="lbl">¿Cuántos llegaron?</div><input id="q" class="qty" type="number" inputmode="numeric" min="0" placeholder="0">
        <div class="btns"><button class="ghost" id="x">Cancelar</button><button class="primary" id="ok" style="flex:1">Agregar</button></div>`
     : `<div class="pname">Producto nuevo</div><div class="pcode">${esc(code)} · no está en la lista</div>
@@ -258,10 +277,153 @@ $('#photo').onchange=async e=>{ const file=e.target.files[0]; e.target.value='';
     code ? onCode(code) : (beep(false), toast('No se leyó el código. Acérquese más, con buena luz.'));
   }catch(e){ toast('No se pudo leer la foto.'); } finally { URL.revokeObjectURL(url); } };
 
+/* ---------- invoice text → lines ---------- */
+const FX={
+  SKIP:/^\s*(SUB\s?)?TOTAL\b|\b(SUB\s?TOTAL|TOTAL\s+ITEM|TOTAL\s+A\s+PAGAR|NIT|CUFE|FECHA|DIRECCI|TEL[EÉ]FONO|OBSERVACI|VALOR EN LETRAS|MEDIO[S]? DE PAGO|RESOLUCI|VENDEDOR|C[EÉ]DULA|CORREO|PLANILLA)\b/i,
+  MONEY:/^\$?\d{1,3}(?:[.,\s]\d{3})*[.,]\d{2}$|^\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?$|^\$\d+([.,]\d{2})?$/,
+  PCT:/^\d{1,2}%$/,
+  QTY:/^\d{1,5}(?:[.,]\d{1,3})?$/,
+  CODE:/^[A-Z]?\d{3,14}$/i,
+  WORD:/[A-ZÁÉÍÓÚÑ]{2,}/i,
+  MEASURE:/^\d+([.,]\d+)?(G|GR|GRS|ML|L|LT|KG|CC|UND|UN|OZ)$/i,
+};
+function moneyVal(t){
+  let s=String(t).replace(/[$\s]/g,'');
+  const lc=s.lastIndexOf(','), ld=s.lastIndexOf('.');
+  const dec=Math.max(lc,ld);
+  if(dec>=0 && s.length-dec-1===2){ s=s.slice(0,dec).replace(/[.,]/g,'')+'.'+s.slice(dec+1); }
+  else s=s.replace(/[.,]/g,'');
+  const n=parseFloat(s); return isFinite(n)?n:0;
+}
+function qtyVal(t){ const s=String(t); if(/^\d+[.,]\d{3}$/.test(s)&&!/^0/.test(s)) return parseFloat(s.replace(/[.,]/,'')); return parseFloat(s.replace(',','.'))||0; }
+function parseInvoiceText(text){
+  const out=[];
+  for(let raw of String(text).split(/\r?\n/)){
+    const line=raw.replace(/[“”"‘’`´|]/g,' ').replace(/\s+/g,' ').replace(/(\$\s?\d{1,3})\s(\d{3}[.,]\d)/g,'$1$2').replace(/\$\s+(\d)/g,'$$$1').trim();
+    if(line.length<8 || FX.SKIP.test(line)) continue;
+    const tk=line.split(' ').map(t=>t.replace(/[.,;:]+$/,'')).filter(Boolean);
+    // description start: first token with 2+ letters that is not a stray short word before numbers
+    let ds=-1;
+    for(let i=0;i<tk.length;i++){ const t=tk[i].replace(/^[-–]+/,''); if(FX.WORD.test(t) && !FX.CODE.test(t) && !FX.MONEY.test(t)){ const before=tk.slice(0,i).filter(x=>/\d/.test(x)); if(before.length||i>0||true){ ds=i; break; } } }
+    if(ds<0) continue;
+    // skip junk lead words like "ies" when followed by a quantity: description must not be followed immediately by a qty+dash pattern
+    while(ds<tk.length-2 && tk[ds].length<=3 && FX.QTY.test(tk[ds+1]) ){ ds++; while(ds<tk.length && !FX.WORD.test(tk[ds])) ds++; }
+    let de=ds;
+    while(de<tk.length && !(FX.MONEY.test(tk[de]) && /[$,]/.test(tk[de])) && !FX.PCT.test(tk[de])) de++;
+    let desc=tk.slice(ds,de).map(t=>t.replace(/^[-–]+/,''));
+    const tail=[];
+    while(desc.length && !FX.WORD.test(desc[desc.length-1]) && !FX.MEASURE.test(desc[desc.length-1])) tail.unshift(desc.pop());
+    while(desc.length && desc[desc.length-1].length<=2 && !FX.MEASURE.test(desc[desc.length-1])) tail.unshift(desc.pop());
+    const tailQty=tail.find(t=>/^\d{1,5}([.,]\d{1,3})?$/.test(t));
+    const description=desc.join(' ').trim();
+    if((description.match(/[A-ZÁÉÍÓÚÑ]/gi)||[]).length<4) continue;
+    // numbers before description
+    const pre=tk.slice(0,ds).map(t=>t.replace(/[-–]/g,'')).filter(Boolean);
+    let qty=null, code='', qtyRaw='';
+    for(let i=pre.length-1;i>=0;i--){ if(qty===null && FX.QTY.test(pre[i]) && (/[.,]\d{1,3}$/.test(pre[i]) || pre[i].length<=3)){ qty=qtyVal(pre[i]); qtyRaw=pre[i]; const c=pre.slice(0,i).reverse().find(x=>FX.CODE.test(x)&&x.replace(/\D/g,'').length>=3); code=c||''; break; } }
+    if(!code){ const c=pre.find(x=>FX.CODE.test(x)&&x.replace(/\D/g,'').length>=3); if(c) code=c; }
+    // after description
+    const post=tk.slice(de);
+    const moneys=post.filter(t=>FX.MONEY.test(t)&&/[$,]/.test(t)).map(moneyVal);
+    if(tailQty && (qty===null || (!/[.,]/.test(qtyRaw) && !code))) qty=qtyVal(tailQty);
+    if(qty===null){ const q=post.find(t=>FX.QTY.test(t)&&!/[$]/.test(t)&&qtyVal(t)<10000); if(q) qty=qtyVal(q); }
+    if(!moneys.length) continue;               // promo / header rows have no prices
+    if(qty===null||!(qty>0)) qty=1;
+    out.push({code, desc:description.toUpperCase(), qty, price:moneys[0]||0});
+  }
+  return out;
+}
+
+/* ---------- invoice ↔ scanned comparison ---------- */
+const ALIAS={get(){return LS.get('rdm2-alias',{});}, set(k,v){const a=this.get();a[k]=v;LS.set('rdm2-alias',a);}};
+function ntok(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/(\d+)\s*(GRS|GR|G)\b/g,'$1G').replace(/(\d+)\s*(ML|CC)\b/g,'$1ML').replace(/[^A-Z0-9]+/g,' ').trim().split(' ').filter(t=>t.length>=2 && !STOP.has(t)); }
+const STOP=new Set(['DE','LA','EL','LOS','LAS','CON','SIN','POR','PARA','UND','UN','X']);
+function lev1(a,b){ if(Math.abs(a.length-b.length)>1) return false; let i=0,j=0,e=0; while(i<a.length&&j<b.length){ if(a[i]===b[j]){i++;j++;continue;} if(++e>1) return false; if(a.length>b.length) i++; else if(b.length>a.length) j++; else {i++;j++;} } return e+(a.length-i)+(b.length-j)<=1; }
+function sim(a,b){ const A=ntok(a),B=ntok(b); if(!A.length||!B.length) return 0; let m=0; const used=new Set();
+  for(const x of A){ const k=B.findIndex((y,i)=>!used.has(i)&&(x===y||(x.length>=4&&y.length>=4&&lev1(x,y)))); if(k>=0){used.add(k);m++;} }
+  if(m<2 || m/Math.max(A.length,B.length)<0.5) return 0; return m/Math.min(A.length,B.length); }
+function groups(fact){ const m=new Map(); for(const x of fact||[]){ const key=x.code||ntok(x.desc).join(' '); const g=m.get(key)||{key,code:x.code,desc:x.desc,qty:0,price:x.price}; g.qty+=num(x.qty); m.set(key,g); } return [...m.values()]; }
+function matchScore(g,barras,name,alias){ if(g.code && (g.code===barras)) return 2; if(alias[g.key] && alias[g.key]===barras) return 2; return sim(g.desc,name); }
+function compare(lines,fact){
+  const G=groups(fact), alias=ALIAS.get(), rec=new Map(G.map(g=>[g.key,0])), extra=[];
+  for(const l of lines){ let best=null,bs=0; for(const g of G){ const sc=matchScore(g,l.barras,l.descripcion,alias); if(sc>bs){bs=sc;best=g;} }
+    if(best && bs>=0.6) rec.set(best.key, rec.get(best.key)+num(l.cant)); else extra.push(l); }
+  const rows=G.map(g=>({g,rec:rec.get(g.key)}));
+  return {rows, extra, ok:rows.filter(r=>r.rec===r.g.qty).length, falt:rows.filter(r=>r.rec<r.g.qty).length};
+}
+function groupFor(barras,name){ const G=groups(st.draft.fact), alias=ALIAS.get(); let best=null,bs=0; for(const g of G){ const sc=matchScore(g,barras,name,alias); if(sc>bs){bs=sc;best=g;} } return bs>=0.6?best:null; }
+
+/* ---------- invoice photo → OCR ---------- */
+let fImg=null, fRot=0, fQueue=[];
+let tessP=null; function loadTess(){ return tessP ||= new Promise((res,rej)=>{ const sc=document.createElement('script'); sc.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'; sc.onload=()=>res(window.Tesseract); sc.onerror=()=>{tessP=null;rej(new Error('net'));}; document.head.appendChild(sc); }); }
+function drawF(maxSide){ const c=maxSide?document.createElement('canvas'):$('#fCanvas'); const w=fImg.naturalWidth,h=fImg.naturalHeight; const s=Math.min(1,(maxSide||1100)/Math.max(w,h)); const W=Math.round(w*s),H=Math.round(h*s);
+  const r=((fRot%360)+360)%360; c.width=(r%180)?H:W; c.height=(r%180)?W:H; const g=c.getContext('2d'); g.save(); g.translate(c.width/2,c.height/2); g.rotate(r*Math.PI/180); g.drawImage(fImg,-W/2,-H/2,W,H); g.restore();
+  if(maxSide){ const d=g.getImageData(0,0,c.width,c.height), p=d.data; let mn=255,mx=0; for(let i=0;i<p.length;i+=4){ const v=(p[i]*.3+p[i+1]*.59+p[i+2]*.11); p[i]=v; if(v<mn)mn=v; if(v>mx)mx=v; }
+    const k=255/Math.max(1,mx-mn); for(let i=0;i<p.length;i+=4){ const v=Math.max(0,Math.min(255,(p[i]-mn)*k)); p[i]=p[i+1]=p[i+2]=v; } g.putImageData(d,0,0); }
+  return c; }
+function showNext(){ const file=fQueue.shift(); if(!file){ $('#fPrev').hidden=true; return; } const url=URL.createObjectURL(file); const img=new Image();
+  img.onload=()=>{ fImg=img; fRot=0; $('#fPrev').hidden=false; drawF(); $('#fProg').textContent=fQueue.length?`Faltan ${fQueue.length} foto(s) más después de esta.`:''; $('#fPrev').scrollIntoView({behavior:'smooth',block:'start'}); };
+  img.onerror=()=>{ toast('No se pudo abrir la foto.'); showNext(); }; img.src=url; }
+function onFiles(e){ fQueue.push(...e.target.files); e.target.value=''; if($('#fPrev').hidden) showNext(); }
+$('#fCam').onchange=onFiles; $('#fPick').onchange=onFiles;
+$('#fRotL').onclick=()=>{ fRot-=90; drawF(); }; $('#fRotR').onclick=()=>{ fRot+=90; drawF(); };
+$('#fCancel').onclick=()=>{ fQueue=[]; $('#fPrev').hidden=true; $('#fProg').textContent=''; };
+const STEP={'loading tesseract core':'Preparando lector','initializing tesseract':'Preparando lector','loading language traineddata':'Descargando idioma español (solo la primera vez)','initializing api':'Preparando lector','recognizing text':'Leyendo factura'};
+$('#fRead').onclick=async()=>{
+  const btn=$('#fRead'); btn.disabled=true; $('#fProg').textContent='Cargando el lector…';
+  try{
+    const T=await loadTess();
+    const w=await T.createWorker('spa',1,{logger:m=>{ if(m.status) $('#fProg').textContent=(STEP[m.status]||m.status)+'… '+Math.round((m.progress||0)*100)+'%'; }});
+    await w.setParameters({tessedit_pageseg_mode:'6', preserve_interword_spaces:'1'});
+    const {data}=await w.recognize(drawF(2400)); await w.terminate();
+    const found=parseInvoiceText(data.text);
+    if(!st.draft.factura){ const m=data.text.match(/N[oº°]\.?\s*:?\s*([A-Z]{2,5}-?\d{4,})/i)||data.text.match(/\b([A-Z]{3,5}-?\d{5,})\b/); if(m){ st.draft.factura=m[1].replace(/\s/,''); $('#h-factura').value=st.draft.factura; } }
+    st.draft.fact=[...(st.draft.fact||[]),...found]; saveDraft();
+    $('#fProg').textContent= found.length ? `✔ Se leyeron ${found.length} productos. Revíselos abajo y corrija lo que esté mal.` : 'No se encontraron productos. Tome la foto más de cerca, derecha y con buena luz, o agréguelos a mano abajo.';
+    beep(!!found.length); renderFact(); render(); showNext();
+  }catch(e){ $('#fProg').textContent='No se pudo leer. Revise la conexión a internet (la primera vez descarga el lector) e intente de nuevo.'; }
+  finally{ btn.disabled=false; }
+};
+
+function renderFact(){
+  const F=st.draft.fact||[];
+  $('#fTable').innerHTML = `<div class="panel"><b>Productos de la factura (${F.length})</b>
+    ${F.length?`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.9rem"><tr style="text-align:left;color:var(--muted);font-size:.72rem;text-transform:uppercase"><th>Código</th><th>Producto</th><th>Cant.</th><th>Precio U.</th><th></th></tr>
+      ${F.map((x,i)=>`<tr data-f="${i}" style="border-top:1px solid var(--line)"><td><input data-k="code" value="${esc(x.code)}" style="width:90px;padding:6px;font:500 .85rem var(--f-mono)"></td>
+        <td style="min-width:170px"><input data-k="desc" value="${esc(x.desc)}" style="padding:6px;font-size:.88rem"></td>
+        <td><input data-k="qty" type="number" inputmode="decimal" value="${esc(x.qty)}" style="width:64px;padding:6px;text-align:right;font-family:var(--f-mono)"></td>
+        <td><input data-k="price" type="number" inputmode="decimal" value="${esc(x.price)}" style="width:96px;padding:6px;text-align:right;font-family:var(--f-mono)"></td>
+        <td><button class="ghost" data-fdel aria-label="Quitar">✕</button></td></tr>`).join('')}</table></div>`:'<div class="note">Tome la foto de la factura arriba, o agregue los productos a mano.</div>'}
+    <div class="btns"><button id="fAdd">+ Agregar línea</button>${F.length?'<span id="fClrW"><button class="ghost" id="fClr">Borrar factura</button></span>':''}</div></div>`;
+  $('#fAdd').onclick=()=>{ st.draft.fact=[...F,{code:'',desc:'',qty:1,price:0}]; saveDraft(); renderFact(); const ins=$('#fTable').querySelectorAll('input[data-k=desc]'); ins[ins.length-1]?.focus(); };
+  if(F.length) $('#fClr').onclick=()=>{ $('#fClrW').innerHTML='<button class="ghost" id="fClrY" style="color:var(--warn)">Sí, borrar la factura</button>'; $('#fClrY').onclick=()=>{ st.draft.fact=[]; saveDraft(); renderFact(); render(); }; };
+  renderCmp();
+}
+$('#fTable').addEventListener('change',e=>{ const tr=e.target.closest('tr[data-f]'); if(!tr) return; const x=st.draft.fact[+tr.dataset.f], k=e.target.dataset.k; if(!k) return;
+  x[k]= (k==='qty'||k==='price') ? num(e.target.value) : e.target.value.trim().toUpperCase(); saveDraft(); renderCmp(); render(); });
+$('#fTable').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-f]'); if(tr && e.target.dataset.fdel!=null){ st.draft.fact.splice(+tr.dataset.f,1); saveDraft(); renderFact(); render(); } });
+function renderCmp(){
+  const F=st.draft.fact||[]; if(!F.length){ $('#fCmp').innerHTML=''; return; }
+  const c=compare(st.draft.lines,F);
+  const chip=(r)=> r.rec===r.g.qty?'<span class="chip" style="background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)">Completo</span>'
+    : r.rec===0?'<span class="chip">No ha llegado</span>' : r.rec<r.g.qty?`<span class="chip">Faltan ${r.g.qty-r.rec}</span>`:`<span class="chip">Sobran ${r.rec-r.g.qty}</span>`;
+  $('#fCmp').innerHTML=`<div class="panel"><b>Factura vs. lo que llegó</b>
+    <div class="note">${c.ok} de ${c.rows.length} productos completos. Escanee en <b>Recibir</b> y esta lista se va actualizando.</div>
+    <div class="list">${c.rows.map((r,i)=>`<div class="it" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><div class="n">${esc(r.g.desc)}</div><div class="c">${esc(r.g.code||'')} · factura ${r.g.qty} · llegó ${r.rec}</div>
+        ${r.rec===0&&c.extra.length?`<select data-link="${i}" style="margin-top:6px;max-width:100%;font-size:.85rem;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)"><option value="">¿Es uno de los escaneados? Elíjalo…</option>${c.extra.map(l=>`<option value="${esc(l.barras)}">${esc(l.descripcion)} (${num(l.cant)})</option>`).join('')}</select>`:''}</div><div>${chip(r)}</div></div>`).join('')}
+      ${c.extra.map(l=>`<div class="it" style="grid-template-columns:minmax(0,1fr) auto"><div><div class="n">${esc(l.descripcion)}</div><div class="c">${esc(l.barras)} · llegó ${num(l.cant)}</div></div><span class="chip">No está en la factura</span></div>`).join('')}</div>
+    <div class="btns"><button id="fCopy">Copiar resultado para WhatsApp</button></div></div>`;
+  $('#fCmp').querySelectorAll('select[data-link]').forEach(sel=>sel.onchange=()=>{ if(!sel.value) return; ALIAS.set(c.rows[+sel.dataset.link].g.key, sel.value); renderCmp(); render(); toast('Vinculado: la próxima vez se reconoce solo'); });
+  $('#fCopy').onclick=()=>copyText(textOf({...st.draft, lines:st.draft.lines, fact:F}));
+}
+
 /* ---------- list ---------- */
 function render(flash){
   const L=st.draft.lines, und=L.reduce((s,l)=>s+num(l.cant),0);
-  $('#sum').innerHTML=`<div><span>Productos</span> <b>${L.length}</b></div><div><span>Unidades</span> <b>${und}</b></div>`;
+  const cmp=(st.draft.fact&&st.draft.fact.length)?compare(L,st.draft.fact):null;
+  $('#sum').innerHTML=`<div><span>Productos</span> <b>${L.length}</b></div><div><span>Unidades</span> <b>${und}</b></div>`+
+    (cmp?`<button class="ghost" id="goFact" style="margin-left:auto">Factura: ${cmp.ok}/${cmp.rows.length} completos${cmp.falt?' · <span class="chip">'+cmp.falt+' con faltante</span>':''} →</button>`:'');
+  if(cmp) $('#goFact').onclick=()=>document.querySelector('nav button[data-tab=fact]').click();
   $('#items').innerHTML = L.length ? `<div class="list">${L.map((l,i)=>`<div class="it" data-i="${i}"><div style="min-width:0"><div class="n">${esc(l.descripcion)}</div><div class="c">${esc(l.barras)}</div></div>
       <input type="number" inputmode="numeric" value="${esc(l.cant)}" aria-label="Cantidad"><button class="ghost" data-del aria-label="Quitar">✕</button></div>`).join('')}</div>`
     : `<div class="empty"><b>Aún no hay productos.</b><br>Escanee un código: sale el nombre y usted escribe cuántos llegaron.</div>`;
@@ -273,15 +435,17 @@ function render(flash){
 $('#items').addEventListener('change',e=>{ const r=e.target.closest('.it'); if(!r||e.target.tagName!=='INPUT') return; st.draft.lines[+r.dataset.i].cant=num(e.target.value); saveDraft(); render(); });
 $('#items').addEventListener('click',e=>{ const r=e.target.closest('.it'); if(r&&e.target.dataset.del!=null){ st.draft.lines.splice(+r.dataset.i,1); saveDraft(); render(); } });
 function textOf(r){ const und=r.lines.reduce((s,l)=>s+num(l.cant),0);
-  return [`RECEPCIÓN${r.numero?' '+r.numero:''} — Mercados Don Manuel`,`Proveedor: ${r.proveedor||'—'} | Factura: ${r.factura||'—'}${r.fecha?' | '+r.fecha:''}`,'',...r.lines.map(l=>`${num(l.cant)}  ${l.descripcion}  (${l.barras})`),'',`Productos: ${r.lines.length} | Unidades: ${und}`].join('\n'); }
+  const c=(r.fact&&r.fact.length)?compare(r.lines,r.fact):null;
+  const extra=c?['','COMPARACIÓN CON LA FACTURA:',...c.rows.filter(x=>x.rec!==x.g.qty).map(x=>`- ${x.g.desc}: facturado ${x.g.qty}, llegó ${x.rec} → ${x.rec<x.g.qty?'FALTAN '+(x.g.qty-x.rec):'sobran '+(x.rec-x.g.qty)}`),...c.extra.map(l=>`- ${l.descripcion}: llegó ${num(l.cant)}, NO está en la factura`),c.rows.every(x=>x.rec===x.g.qty)&&!c.extra.length?'Todo llegó completo ✔':'']:[];
+  return [`RECEPCIÓN${r.numero?' '+r.numero:''} — Mercados Don Manuel`,`Proveedor: ${r.proveedor||'—'} | Factura: ${r.factura||'—'}${r.fecha?' | '+r.fecha:''}`,'',...r.lines.map(l=>`${num(l.cant)}  ${l.descripcion}  (${l.barras})`),'',`Productos: ${r.lines.length} | Unidades: ${und}`,...extra].join('\n'); }
 async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('Copiado: péguelo en WhatsApp'); }catch(e){ $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="lbl">Seleccione y copie</div><pre class="txt">${esc(t)}</pre><button id="x">Cerrar</button>`; $('#x').onclick=close; } }
 async function saveRec(){
   const d=st.draft; if(!d.proveedor){ toast('Escriba el proveedor'); $('#h-proveedor').focus(); return; }
   const z=n=>String(n).padStart(2,'0'), t=new Date();
   const rec={numero:`REC-${t.getFullYear()}${z(t.getMonth()+1)}${z(t.getDate())}-${z(t.getHours())}${z(t.getMinutes())}`, fecha:today(), proveedor:d.proveedor, factura:d.factura||'',
-    lines:d.lines.map(l=>({barras:l.barras, descripcion:l.descripcion, cant:num(l.cant)})), creado:Date.now()};
+    lines:d.lines.map(l=>({barras:l.barras, descripcion:l.descripcion, cant:num(l.cant)})), fact:(d.fact||[]).map(x=>({...x})), creado:Date.now()};
   try{ await storeRec(rec); }catch(e){ toast('No se pudo guardar. Intente de nuevo.'); return; }
-  st.draft={proveedor:'',factura:'',lines:[]}; $('#h-proveedor').value=''; $('#h-factura').value=''; saveDraft(); render(); toast('Recepción '+rec.numero+' guardada');
+  st.draft={proveedor:'',factura:'',lines:[],fact:[]}; $('#h-proveedor').value=''; $('#h-factura').value=''; saveDraft(); render(); renderFact(); toast('Recepción '+rec.numero+' guardada');
 }
 
 /* ---------- history ---------- */
@@ -292,7 +456,7 @@ function renderHist(){
     $('#sheet').innerHTML=`<div class="pname">${esc(r.proveedor)}</div><div class="pcode">${esc(r.numero)} · ${esc(r.factura||'')}</div><pre class="txt">${esc(textOf(r))}</pre><div class="btns"><button id="x">Cerrar</button><button class="primary" id="cp">Copiar para WhatsApp</button></div>`;
     $('#x').onclick=close; $('#cp').onclick=()=>copyText(textOf(r)); });
 }
-document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x===b))); $('#v-recibir').hidden=b.dataset.tab!=='recibir'; $('#v-hist').hidden=b.dataset.tab!=='hist'; if(b.dataset.tab!=='recibir') stopCam(); });
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x===b))); $('#v-recibir').hidden=b.dataset.tab!=='recibir'; $('#v-hist').hidden=b.dataset.tab!=='hist'; $('#v-fact').hidden=b.dataset.tab!=='fact'; if(b.dataset.tab==='fact') renderFact(); if(b.dataset.tab!=='recibir') stopCam(); });
 
 /* server settings (own website only) */
 $('#srvUrl').value=SRV.cfg.url||''; $('#srvKey').value=SRV.cfg.clave||'';
@@ -301,7 +465,8 @@ $('#srvSave').onclick=async()=>{ const url=$('#srvUrl').value.trim(), clave=$('#
   try{ const r=await apiGet('ping'); $('#srvMsg').textContent=r.ok?'Conectado ✔ Recargando…':'Clave incorrecta.'; if(r.ok) setTimeout(()=>location.reload(),600); }catch(e){ $('#srvMsg').textContent='No se pudo conectar.'; } };
 $('#srvLink').onclick=async()=>{ const c=SRV.cfg; if(!SRV.on) return; const link=location.origin+location.pathname+'#s='+btoa(c.url)+'&k='+encodeURIComponent(c.clave); try{ await navigator.clipboard.writeText(link); toast('Link copiado'); }catch(e){ $('#srvMsg').textContent=link; } };
 
-render(); startStorage();
+if(!Array.isArray(st.draft.fact)) st.draft.fact=[];
+render(); renderFact(); startStorage();
 if(isDesk()) $('#code').focus();
 })();
 </script>
