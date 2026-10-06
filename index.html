@@ -412,9 +412,8 @@ function renderCmp(){
     <div class="list">${c.rows.map((r,i)=>`<div class="it" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><div class="n">${esc(r.g.desc)}</div><div class="c">${esc(r.g.code||'')} · factura ${r.g.qty} · llegó ${r.rec}</div>
         ${r.rec===0&&c.extra.length?`<select data-link="${i}" style="margin-top:6px;max-width:100%;font-size:.85rem;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)"><option value="">¿Es uno de los escaneados? Elíjalo…</option>${c.extra.map(l=>`<option value="${esc(l.barras)}">${esc(l.descripcion)} (${num(l.cant)})</option>`).join('')}</select>`:''}</div><div>${chip(r)}</div></div>`).join('')}
       ${c.extra.map(l=>`<div class="it" style="grid-template-columns:minmax(0,1fr) auto"><div><div class="n">${esc(l.descripcion)}</div><div class="c">${esc(l.barras)} · llegó ${num(l.cant)}</div></div><span class="chip">No está en la factura</span></div>`).join('')}</div>
-    <div class="btns"><button id="fCopy">Copiar resultado para WhatsApp</button></div></div>`;
+    </div>`;
   $('#fCmp').querySelectorAll('select[data-link]').forEach(sel=>sel.onchange=()=>{ if(!sel.value) return; ALIAS.set(c.rows[+sel.dataset.link].g.key, sel.value); renderCmp(); render(); toast('Vinculado: la próxima vez se reconoce solo'); });
-  $('#fCopy').onclick=()=>copyText(textOf({...st.draft, lines:st.draft.lines, fact:F}));
 }
 
 /* ---------- list ---------- */
@@ -427,8 +426,8 @@ function render(flash){
   $('#items').innerHTML = L.length ? `<div class="list">${L.map((l,i)=>`<div class="it" data-i="${i}"><div style="min-width:0"><div class="n">${esc(l.descripcion)}</div><div class="c">${esc(l.barras)}</div></div>
       <input type="number" inputmode="numeric" value="${esc(l.cant)}" aria-label="Cantidad"><button class="ghost" data-del aria-label="Quitar">✕</button></div>`).join('')}</div>`
     : `<div class="empty"><b>Aún no hay productos.</b><br>Escanee un código: sale el nombre y usted escribe cuántos llegaron.</div>`;
-  $('#acts').innerHTML = L.length ? `<button class="primary" id="save">Guardar recepción</button><button id="copy">Copiar para WhatsApp</button><span id="clrW"><button class="ghost" id="clr">Borrar todo</button></span>` : '';
-  if(L.length){ $('#save').onclick=saveRec; $('#copy').onclick=()=>copyText(textOf({...st.draft,lines:L}));
+  $('#acts').innerHTML = L.length ? `<button class="primary" id="save">Guardar recepción</button><span id="clrW"><button class="ghost" id="clr">Borrar todo</button></span>` : '';
+  if(L.length){ $('#save').onclick=saveRec;
     $('#clr').onclick=()=>{ $('#clrW').innerHTML='<button class="ghost" id="clrY" style="color:var(--warn)">Sí, borrar la lista</button>'; $('#clrY').onclick=()=>{ st.draft.lines=[]; saveDraft(); render(); }; }; }
   if(flash){ const el=$('#items .it'); if(el){ el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),800); } }
 }
@@ -438,7 +437,7 @@ function textOf(r){ const und=r.lines.reduce((s,l)=>s+num(l.cant),0);
   const c=(r.fact&&r.fact.length)?compare(r.lines,r.fact):null;
   const extra=c?['','COMPARACIÓN CON LA FACTURA:',...c.rows.filter(x=>x.rec!==x.g.qty).map(x=>`- ${x.g.desc}: facturado ${x.g.qty}, llegó ${x.rec} → ${x.rec<x.g.qty?'FALTAN '+(x.g.qty-x.rec):'sobran '+(x.rec-x.g.qty)}`),...c.extra.map(l=>`- ${l.descripcion}: llegó ${num(l.cant)}, NO está en la factura`),c.rows.every(x=>x.rec===x.g.qty)&&!c.extra.length?'Todo llegó completo ✔':'']:[];
   return [`RECEPCIÓN${r.numero?' '+r.numero:''} — Mercados Don Manuel`,`Proveedor: ${r.proveedor||'—'} | Factura: ${r.factura||'—'}${r.fecha?' | '+r.fecha:''}`,'',...r.lines.map(l=>`${num(l.cant)}  ${l.descripcion}  (${l.barras})`),'',`Productos: ${r.lines.length} | Unidades: ${und}`,...extra].join('\n'); }
-async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('Copiado: péguelo en WhatsApp'); }catch(e){ $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="lbl">Seleccione y copie</div><pre class="txt">${esc(t)}</pre><button id="x">Cerrar</button>`; $('#x').onclick=close; } }
+async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('Copiado'); }catch(e){ $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="lbl">Seleccione y copie</div><pre class="txt">${esc(t)}</pre><button id="x">Cerrar</button>`; $('#x').onclick=close; } }
 async function saveRec(){
   const d=st.draft; if(!d.proveedor){ toast('Escriba el proveedor'); $('#h-proveedor').focus(); return; }
   const z=n=>String(n).padStart(2,'0'), t=new Date();
@@ -453,8 +452,8 @@ function renderHist(){
   $('#hist').innerHTML = st.recs.length ? `<div class="list">${st.recs.map((r,i)=>`<div class="it" data-h="${i}" style="grid-template-columns:minmax(0,1fr) auto;cursor:pointer"><div><div class="n">${esc(r.proveedor)}${r.factura?' · <span class="mono">'+esc(r.factura)+'</span>':''}</div><div class="c">${esc(r.numero)} · ${esc(r.fecha)}</div></div><div class="mono">${(r.lines||[]).length} prod.</div></div>`).join('')}</div>`
     : '<div class="empty">Aún no hay recepciones guardadas.</div>';
   $('#hist').querySelectorAll('[data-h]').forEach(el=>el.onclick=()=>{ const r=st.recs[+el.dataset.h]; $('#ov').hidden=false;
-    $('#sheet').innerHTML=`<div class="pname">${esc(r.proveedor)}</div><div class="pcode">${esc(r.numero)} · ${esc(r.factura||'')}</div><pre class="txt">${esc(textOf(r))}</pre><div class="btns"><button id="x">Cerrar</button><button class="primary" id="cp">Copiar para WhatsApp</button></div>`;
-    $('#x').onclick=close; $('#cp').onclick=()=>copyText(textOf(r)); });
+    $('#sheet').innerHTML=`<div class="pname">${esc(r.proveedor)}</div><div class="pcode">${esc(r.numero)} · ${esc(r.factura||'')}</div><pre class="txt">${esc(textOf(r))}</pre><div class="btns"><button id="x">Cerrar</button></div>`;
+    $('#x').onclick=close; });
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-selected',String(x===b))); $('#v-recibir').hidden=b.dataset.tab!=='recibir'; $('#v-hist').hidden=b.dataset.tab!=='hist'; $('#v-fact').hidden=b.dataset.tab!=='fact'; if(b.dataset.tab==='fact') renderFact(); if(b.dataset.tab!=='recibir') stopCam(); });
 
