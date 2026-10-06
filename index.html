@@ -51,7 +51,7 @@ label.btn{display:inline-flex;align-items:center;gap:6px;position:relative}
 .it input{font:600 1.15rem var(--f-mono);text-align:right;padding:8px}
 .empty{border:1px dashed var(--line);border-radius:12px;padding:18px;color:var(--muted)}
 .overlay{position:fixed;inset:0;background:rgba(10,20,24,.55);display:flex;align-items:flex-end;justify-content:center;z-index:20}
-.sheet{background:var(--surface);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+.sheet{max-height:92vh;overflow:auto;background:var(--surface);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
 @media (min-width:700px){.overlay{align-items:center}.sheet{border-radius:16px}}
 .pname{font-size:1.35rem;font-weight:800;line-height:1.2}
 .pcode{font-family:var(--f-mono);color:var(--muted)}
@@ -109,7 +109,7 @@ pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);pa
     <div id="fTable"></div>
   </section>
 
-  <section id="v-hist" hidden style="display:flex;flex-direction:column;gap:12px"><div id="hist"></div></section>
+  <section id="v-hist" hidden style="display:flex;flex-direction:column;gap:12px"><div class="btns"><button class="primary" id="hTabF">Facturas</button><button id="hTabR">Recepciones</button></div><div id="histF"></div><div id="hist" hidden></div></section>
 
   <div class="panel" id="srvPanel" hidden>
     <b>Servidor del almacén (Hoja de Google)</b>
@@ -376,6 +376,7 @@ $('#fRead').onclick=async()=>{
     const w=await T.createWorker('spa',1,{logger:m=>{ if(m.status) $('#fProg').textContent=(STEP[m.status]||m.status)+'… '+Math.round((m.progress||0)*100)+'%'; }});
     await w.setParameters({tessedit_pageseg_mode:'6', preserve_interword_spaces:'1'});
     const {data}=await w.recognize(drawF(2400)); await w.terminate();
+    try{ const blob=await photoBlob(); if(blob){ const arr=await IDB.get('draft'); arr.push(blob); await IDB.set('draft',arr); } }catch(e){}
     const found=parseInvoiceText(data.text);
     if(!st.draft.factura){ const m=data.text.match(/N[oº°]\.?\s*:?\s*([A-Z]{2,5}-?\d{4,})/i)||data.text.match(/\b([A-Z]{3,5}-?\d{5,})\b/); if(m){ st.draft.factura=m[1].replace(/\s/,''); $('#h-factura').value=st.draft.factura; } }
     st.draft.fact=[...(st.draft.fact||[]),...found]; saveDraft();
@@ -394,9 +395,10 @@ function renderFact(){
         <td><input data-k="qty" type="number" inputmode="decimal" value="${esc(x.qty)}" style="width:64px;padding:6px;text-align:right;font-family:var(--f-mono)"></td>
         <td><input data-k="price" type="number" inputmode="decimal" value="${esc(x.price)}" style="width:96px;padding:6px;text-align:right;font-family:var(--f-mono)"></td>
         <td><button class="ghost" data-fdel aria-label="Quitar">✕</button></td></tr>`).join('')}</table></div>`:'<div class="note">Tome la foto de la factura arriba, o agregue los productos a mano.</div>'}
-    <div class="btns"><button id="fAdd">+ Agregar línea</button>${F.length?'<span id="fClrW"><button class="ghost" id="fClr">Borrar factura</button></span>':''}</div></div>`;
+    <div class="btns">${F.length?`<button class="primary" id="fSave">${st.draft.factId?'Guardar cambios de la factura':'Guardar factura'}</button>`:''}<button id="fAdd">+ Agregar línea</button>${F.length?'<span id="fClrW"><button class="ghost" id="fClr">Borrar factura</button></span>':''}</div></div>`;
   $('#fAdd').onclick=()=>{ st.draft.fact=[...F,{code:'',desc:'',qty:1,price:0}]; saveDraft(); renderFact(); const ins=$('#fTable').querySelectorAll('input[data-k=desc]'); ins[ins.length-1]?.focus(); };
-  if(F.length) $('#fClr').onclick=()=>{ $('#fClrW').innerHTML='<button class="ghost" id="fClrY" style="color:var(--warn)">Sí, borrar la factura</button>'; $('#fClrY').onclick=()=>{ st.draft.fact=[]; saveDraft(); renderFact(); render(); }; };
+  if(F.length) $('#fClr').onclick=()=>{ $('#fClrW').innerHTML='<button class="ghost" id="fClrY" style="color:var(--warn)">Sí, borrar la factura</button>'; $('#fClrY').onclick=()=>{ st.draft.fact=[]; st.draft.factId=null; IDB.del('draft'); saveDraft(); renderFact(); render(); }; };
+  if(F.length) $('#fSave').onclick=async()=>{ const id=await saveFact(); if(id){ toast('Factura guardada ✔ (Historial → Facturas)'); renderFact(); } };
   renderCmp();
 }
 $('#fTable').addEventListener('change',e=>{ const tr=e.target.closest('tr[data-f]'); if(!tr) return; const x=st.draft.fact[+tr.dataset.f], k=e.target.dataset.k; if(!k) return;
@@ -444,11 +446,59 @@ async function saveRec(){
   const rec={numero:`REC-${t.getFullYear()}${z(t.getMonth()+1)}${z(t.getDate())}-${z(t.getHours())}${z(t.getMinutes())}`, fecha:today(), proveedor:d.proveedor, factura:d.factura||'',
     lines:d.lines.map(l=>({barras:l.barras, descripcion:l.descripcion, cant:num(l.cant)})), fact:(d.fact||[]).map(x=>({...x})), creado:Date.now()};
   try{ await storeRec(rec); }catch(e){ toast('No se pudo guardar. Intente de nuevo.'); return; }
-  st.draft={proveedor:'',factura:'',lines:[],fact:[]}; $('#h-proveedor').value=''; $('#h-factura').value=''; saveDraft(); render(); renderFact(); toast('Recepción '+rec.numero+' guardada');
+  if((d.fact||[]).length){ await saveFact(rec.numero); }
+  IDB.del('draft');
+  st.draft={proveedor:'',factura:'',lines:[],fact:[],factId:null}; $('#h-proveedor').value=''; $('#h-factura').value=''; saveDraft(); render(); renderFact(); toast('Recepción '+rec.numero+' guardada');
 }
+
+/* ---------- saved invoices (this phone: list in localStorage, photos in IndexedDB) ---------- */
+const IDB={p:null, open(){ return this.p ||= new Promise((res,rej)=>{ const r=indexedDB.open('rdm2',1); r.onupgradeneeded=()=>r.result.createObjectStore('photos'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); },
+  async get(k){ try{ const db=await this.open(); return await new Promise(res=>{ const q=db.transaction('photos').objectStore('photos').get(k); q.onsuccess=()=>res(q.result||[]); q.onerror=()=>res([]); }); }catch(e){ return []; } },
+  async set(k,v){ try{ const db=await this.open(); return await new Promise(res=>{ const t=db.transaction('photos','readwrite'); t.objectStore('photos').put(v,k); t.oncomplete=()=>res(true); t.onerror=()=>res(false); }); }catch(e){ return false; } },
+  async del(k){ try{ const db=await this.open(); const t=db.transaction('photos','readwrite'); t.objectStore('photos').delete(k); }catch(e){} } };
+function photoBlob(){ return new Promise(res=>{ if(!fImg) return res(null); const w=fImg.naturalWidth,h=fImg.naturalHeight,s=Math.min(1,1600/Math.max(w,h)),W=Math.round(w*s),H=Math.round(h*s),r=((fRot%360)+360)%360;
+  const c=document.createElement('canvas'); c.width=(r%180)?H:W; c.height=(r%180)?W:H; const g=c.getContext('2d'); g.translate(c.width/2,c.height/2); g.rotate(r*Math.PI/180); g.drawImage(fImg,-W/2,-H/2,W,H);
+  c.toBlob(b=>res(b),'image/jpeg',0.72); }); }
+const FACTS={get(){ return LS.get('rdm2-facts',[]); }, set(v){ LS.set('rdm2-facts',v); }};
+async function saveFact(recNum){
+  const d=st.draft; if(!(d.fact||[]).length) return null;
+  if(!d.proveedor){ toast('Escriba el proveedor en la pestaña Recibir'); return null; }
+  const id=d.factId||('F'+Date.now());
+  const tot=d.fact.reduce((s,x)=>s+num(x.qty)*num(x.price),0);
+  const c=compare(d.lines||[],d.fact);
+  const obj={id, proveedor:d.proveedor, factura:d.factura||'', fecha:today(), lines:d.fact.map(x=>({...x})), total:Math.round(tot),
+    estado:(d.lines||[]).length?`${c.ok}/${c.rows.length} completos`:'Sin recibir', recepcion:recNum||'', guardada:Date.now()};
+  const list=FACTS.get().filter(x=>x.id!==id); list.unshift(obj); FACTS.set(list.slice(0,300));
+  const ph=await IDB.get('draft'); if(ph.length) await IDB.set(id, ph);
+  d.factId=id; saveDraft(); renderHist(); return id;
+}
+const money0=n=>'$'+Math.round(num(n)).toLocaleString('es-CO');
+function renderFacts(){
+  const L=FACTS.get();
+  $('#histF').innerHTML = L.length ? `<div class="list">${L.map((f,i)=>`<div class="it" data-fi="${i}" style="grid-template-columns:minmax(0,1fr) auto;cursor:pointer"><div><div class="n">${esc(f.proveedor)}${f.factura?' · <span class="mono">'+esc(f.factura)+'</span>':''}</div><div class="c">${esc(f.fecha)} · ${f.lines.length} productos · ${money0(f.total)}</div></div><span class="chip">${esc(f.estado)}</span></div>`).join('')}</div>`
+    : '<div class="empty">Aún no hay facturas guardadas. En la pestaña <b>Factura</b> tome la foto y toque <b>Guardar factura</b>.</div>';
+  $('#histF').querySelectorAll('[data-fi]').forEach(el=>el.onclick=()=>openFact(L[+el.dataset.fi]));
+}
+async function openFact(f){
+  const photos=await IDB.get(f.id); const urls=photos.map(b=>URL.createObjectURL(b));
+  $('#ov').hidden=false;
+  $('#sheet').innerHTML=`<div class="pname">${esc(f.proveedor)}</div><div class="pcode">Factura ${esc(f.factura||'—')} · ${esc(f.fecha)}${f.recepcion?' · '+esc(f.recepcion):''}</div>
+    ${urls.map(u=>`<a href="${u}" target="_blank"><img src="${u}" alt="Foto de la factura" style="width:100%;border-radius:8px;border:1px solid var(--line)"></a>`).join('')}
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem"><tr style="text-align:left;color:var(--muted);font-size:.7rem;text-transform:uppercase"><th>Código</th><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Precio U.</th><th style="text-align:right">Total</th></tr>
+      ${f.lines.map(x=>`<tr style="border-top:1px solid var(--line)"><td class="mono">${esc(x.code)}</td><td>${esc(x.desc)}</td><td class="mono" style="text-align:right">${num(x.qty)}</td><td class="mono" style="text-align:right">${money0(x.price)}</td><td class="mono" style="text-align:right">${money0(num(x.qty)*num(x.price))}</td></tr>`).join('')}
+      <tr style="border-top:2px solid var(--ink)"><td colspan="4"><b>Total (antes de IVA)</b></td><td class="mono" style="text-align:right"><b>${money0(f.total)}</b></td></tr></table></div>
+    <div class="btns"><button id="x">Cerrar</button><button class="primary" id="fLoad">Abrir para comparar</button><span id="fDelW"><button class="ghost" id="fDel">Eliminar</button></span></div>`;
+  $('#x').onclick=()=>{ urls.forEach(u=>URL.revokeObjectURL(u)); close(); };
+  $('#fLoad').onclick=async()=>{ st.draft.fact=f.lines.map(x=>({...x})); st.draft.factId=f.id; st.draft.proveedor=f.proveedor; st.draft.factura=f.factura; $('#h-proveedor').value=f.proveedor; $('#h-factura').value=f.factura;
+    await IDB.set('draft', await IDB.get(f.id)); saveDraft(); close(); render(); document.querySelector('nav button[data-tab=fact]').click(); toast('Factura abierta'); };
+  $('#fDel').onclick=()=>{ $('#fDelW').innerHTML='<button class="ghost" id="fDelY" style="color:var(--warn)">Sí, eliminar</button>'; $('#fDelY').onclick=()=>{ FACTS.set(FACTS.get().filter(x=>x.id!==f.id)); IDB.del(f.id); if(st.draft.factId===f.id){ st.draft.factId=null; saveDraft(); } close(); renderFacts(); toast('Factura eliminada'); }; };
+}
+$('#hTabF').onclick=()=>{ $('#histF').hidden=false; $('#hist').hidden=true; $('#hTabF').className='primary'; $('#hTabR').className=''; renderFacts(); };
+$('#hTabR').onclick=()=>{ $('#histF').hidden=true; $('#hist').hidden=false; $('#hTabR').className='primary'; $('#hTabF').className=''; };
 
 /* ---------- history ---------- */
 function renderHist(){
+  renderFacts();
   $('#hist').innerHTML = st.recs.length ? `<div class="list">${st.recs.map((r,i)=>`<div class="it" data-h="${i}" style="grid-template-columns:minmax(0,1fr) auto;cursor:pointer"><div><div class="n">${esc(r.proveedor)}${r.factura?' · <span class="mono">'+esc(r.factura)+'</span>':''}</div><div class="c">${esc(r.numero)} · ${esc(r.fecha)}</div></div><div class="mono">${(r.lines||[]).length} prod.</div></div>`).join('')}</div>`
     : '<div class="empty">Aún no hay recepciones guardadas.</div>';
   $('#hist').querySelectorAll('[data-h]').forEach(el=>el.onclick=()=>{ const r=st.recs[+el.dataset.h]; $('#ov').hidden=false;
