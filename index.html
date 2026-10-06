@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14232b">
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14232b"><link rel="manifest" href="manifest.json"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
 <title>Recepción Don Manuel</title>
 <meta name="robots" content="noindex,nofollow">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -549,6 +549,8 @@ $('#srvLink').onclick=async()=>{ const c=SRV.cfg; if(!SRV.on){ $('#srvMsg').text
 
 if(!Array.isArray(st.draft.fact)) st.draft.fact=[];
 render(); renderFact(); startStorage();
+if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }
+window.addEventListener('online',()=>toast('Conexión recuperada')); window.addEventListener('offline',()=>toast('Sin internet: puede seguir escaneando, todo queda guardado en el celular'));
 $('#btnShare').onclick=async()=>{ const url=location.origin+location.pathname;
   if(navigator.share){ try{ await navigator.share({title:'Recepción Don Manuel',text:'App de recepción de mercancía',url}); return; }catch(e){ if(e&&e.name==='AbortError') return; } }
   try{ await navigator.clipboard.writeText(url); toast('Link copiado: péguelo donde quiera'); return; }catch(e){}
