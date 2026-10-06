@@ -94,14 +94,14 @@ pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);pa
     <div class="panel">
       <b>Factura del proveedor</b>
       <div class="btns">
-        <label class="btn scanbtn" for="fCam">📷 Tomar foto de la factura<input type="file" id="fCam" class="vh" accept="image/*" capture="environment"></label>
-        <label class="btn" for="fPick">🖼 Elegir foto(s)<input type="file" id="fPick" class="vh" accept="image/*" multiple></label>
+        <label class="btn scanbtn" for="fCam">📷 Tomar foto de una página<input type="file" id="fCam" class="vh" accept="image/*" capture="environment"></label>
+        <label class="btn" for="fPick">🖼 Elegir páginas de la galería<input type="file" id="fPick" class="vh" accept="image/*" multiple></label>
       </div>
-      <div class="note">Si la factura tiene varias páginas, cárguelas una por una: se suman a la misma factura.</div>
-      <div id="fPrev" hidden style="display:flex;flex-direction:column;gap:8px">
-        <canvas id="fCanvas" style="max-width:100%;max-height:55vh;object-fit:contain;border-radius:8px;border:1px solid var(--line);align-self:center"></canvas>
-        <div class="note"><b>Gire la foto hasta que las letras queden derechas</b> y toque Leer factura.</div>
-        <div class="btns"><button id="fRotL">⟲ Girar</button><button id="fRotR">⟳ Girar</button><button class="primary" id="fRead" style="flex:1">Leer factura</button><button class="ghost" id="fCancel">Cancelar</button></div>
+      <div class="note">Agregue <b>todas las páginas</b> de la factura (hasta 20): tome una foto por página o elija varias de la galería. Luego toque <b>Leer páginas</b>.</div>
+      <div id="fPrev" hidden style="display:flex;flex-direction:column;gap:10px">
+        <div id="fPages" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px"></div>
+        <div class="note">Las letras deben quedar <b>derechas</b> en las miniaturas. Si no, toque ⟳ en esa página o “Girar todas”.</div>
+        <div class="btns"><button id="fRotAll">⟳ Girar todas</button><button class="primary" id="fRead" style="flex:1">Leer páginas</button><button class="ghost" id="fCancel">Quitar todas</button></div>
       </div>
       <div class="note" id="fProg"></div>
     </div>
@@ -353,37 +353,66 @@ function compare(lines,fact){
 }
 function groupFor(barras,name){ const G=groups(st.draft.fact), alias=ALIAS.get(); let best=null,bs=0; for(const g of G){ const sc=matchScore(g,barras,name,alias); if(sc>bs){bs=sc;best=g;} } return bs>=0.6?best:null; }
 
-/* ---------- invoice photo → OCR ---------- */
-let fImg=null, fRot=0, fQueue=[];
+/* ---------- invoice photos (many pages) → OCR ---------- */
+let fPages=[];   // {blob, rot, thumb}
 let tessP=null; function loadTess(){ return tessP ||= new Promise((res,rej)=>{ const sc=document.createElement('script'); sc.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js'; sc.onload=()=>res(window.Tesseract); sc.onerror=()=>{tessP=null;rej(new Error('net'));}; document.head.appendChild(sc); }); }
-function drawF(maxSide){ const c=maxSide?document.createElement('canvas'):$('#fCanvas'); const w=fImg.naturalWidth,h=fImg.naturalHeight; const s=Math.min(1,(maxSide||1100)/Math.max(w,h)); const W=Math.round(w*s),H=Math.round(h*s);
-  const r=((fRot%360)+360)%360; c.width=(r%180)?H:W; c.height=(r%180)?W:H; const g=c.getContext('2d'); g.save(); g.translate(c.width/2,c.height/2); g.rotate(r*Math.PI/180); g.drawImage(fImg,-W/2,-H/2,W,H); g.restore();
-  if(maxSide){ const d=g.getImageData(0,0,c.width,c.height), p=d.data; let mn=255,mx=0; for(let i=0;i<p.length;i+=4){ const v=(p[i]*.3+p[i+1]*.59+p[i+2]*.11); p[i]=v; if(v<mn)mn=v; if(v>mx)mx=v; }
+function fileToImg(file){ return new Promise((res,rej)=>{ const u=URL.createObjectURL(file); const i=new Image(); i.onload=()=>{ res(i); setTimeout(()=>URL.revokeObjectURL(u),1000); }; i.onerror=()=>{ URL.revokeObjectURL(u); rej(); }; i.src=u; }); }
+function canvasFrom(img,maxSide,rot,gray){ const w=img.naturalWidth||img.width,h=img.naturalHeight||img.height,s=Math.min(1,maxSide/Math.max(w,h)),W=Math.round(w*s),H=Math.round(h*s),r=((rot%360)+360)%360;
+  const c=document.createElement('canvas'); c.width=(r%180)?H:W; c.height=(r%180)?W:H; const g=c.getContext('2d',{willReadFrequently:!!gray}); g.translate(c.width/2,c.height/2); g.rotate(r*Math.PI/180); g.drawImage(img,-W/2,-H/2,W,H); g.setTransform(1,0,0,1,0,0);
+  if(gray){ const d=g.getImageData(0,0,c.width,c.height),p=d.data; let mn=255,mx=0; for(let i=0;i<p.length;i+=4){ const v=p[i]*.3+p[i+1]*.59+p[i+2]*.11; p[i]=v; if(v<mn)mn=v; if(v>mx)mx=v; }
     const k=255/Math.max(1,mx-mn); for(let i=0;i<p.length;i+=4){ const v=Math.max(0,Math.min(255,(p[i]-mn)*k)); p[i]=p[i+1]=p[i+2]=v; } g.putImageData(d,0,0); }
   return c; }
-function showNext(){ const file=fQueue.shift(); if(!file){ $('#fPrev').hidden=true; return; } const url=URL.createObjectURL(file); const img=new Image();
-  img.onload=()=>{ fImg=img; fRot=0; $('#fPrev').hidden=false; drawF(); $('#fProg').textContent=fQueue.length?`Faltan ${fQueue.length} foto(s) más después de esta.`:''; $('#fPrev').scrollIntoView({behavior:'smooth',block:'start'}); };
-  img.onerror=()=>{ toast('No se pudo abrir la foto.'); showNext(); }; img.src=url; }
-function onFiles(e){ fQueue.push(...e.target.files); e.target.value=''; if($('#fPrev').hidden) showNext(); }
-$('#fCam').onchange=onFiles; $('#fPick').onchange=onFiles;
-$('#fRotL').onclick=()=>{ fRot-=90; drawF(); }; $('#fRotR').onclick=()=>{ fRot+=90; drawF(); };
-$('#fCancel').onclick=()=>{ fQueue=[]; $('#fPrev').hidden=true; $('#fProg').textContent=''; };
-const STEP={'loading tesseract core':'Preparando lector','initializing tesseract':'Preparando lector','loading language traineddata':'Descargando idioma español (solo la primera vez)','initializing api':'Preparando lector','recognizing text':'Leyendo factura'};
+const toBlob=(c,q)=>new Promise(r=>c.toBlob(r,'image/jpeg',q));
+async function addPages(files){
+  for(const f of files){ if(fPages.length>=20){ toast('Máximo 20 páginas por factura'); break; }
+    try{ const img=await fileToImg(f); const big=canvasFrom(img,2400,0,false); const blob=await toBlob(big,0.88); const thumb=canvasFrom(img,240,0,false).toDataURL('image/jpeg',0.6);
+      fPages.push({blob, rot:fPages.length?fPages[fPages.length-1].rot:0, thumb}); }catch(e){ toast('No se pudo abrir una de las fotos'); } }
+  drawPages();
+}
+function drawPages(){
+  $('#fPrev').hidden=!fPages.length;
+  $('#fRead').textContent=`Leer ${fPages.length} página${fPages.length===1?'':'s'}`;
+  $('#fPages').innerHTML=fPages.map((p,i)=>`<div style="position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--sunk);aspect-ratio:3/4;display:flex;align-items:center;justify-content:center">
+      <img src="${p.thumb}" alt="Página ${i+1}" style="max-width:100%;max-height:100%;transform:rotate(${p.rot}deg)">
+      <span style="position:absolute;top:4px;left:4px;background:var(--ink);color:var(--bg);font-size:.72rem;font-weight:600;padding:1px 6px;border-radius:99px">${i+1}</span>
+      <button data-prot="${i}" aria-label="Girar página ${i+1}" style="position:absolute;bottom:4px;left:4px;padding:4px 8px;font-size:.9rem">⟳</button>
+      <button data-pdel="${i}" aria-label="Quitar página ${i+1}" style="position:absolute;bottom:4px;right:4px;padding:4px 8px;font-size:.9rem">✕</button></div>`).join('')
+    + (fPages.length<20?`<label for="fCam" style="border:2px dashed var(--line);border-radius:8px;aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:.8rem;text-align:center;cursor:pointer;text-transform:none;letter-spacing:0">＋<br>Otra página</label>`:'');
+}
+$('#fPages').addEventListener('click',e=>{ const r=e.target.dataset.prot, d=e.target.dataset.pdel;
+  if(r!=null){ fPages[+r].rot=(fPages[+r].rot+90)%360; drawPages(); }
+  if(d!=null){ fPages.splice(+d,1); drawPages(); } });
+$('#fCam').onchange=e=>{ const f=[...e.target.files]; e.target.value=''; addPages(f); };
+$('#fPick').onchange=e=>{ const f=[...e.target.files]; e.target.value=''; addPages(f); };
+$('#fRotAll').onclick=()=>{ fPages.forEach(p=>p.rot=(p.rot+90)%360); drawPages(); };
+$('#fCancel').onclick=()=>{ fPages=[]; drawPages(); $('#fProg').textContent=''; };
+const STEP={'loading tesseract core':'Preparando lector','initializing tesseract':'Preparando lector','loading language traineddata':'Descargando idioma español (solo la primera vez)','initializing api':'Preparando lector','recognizing text':'Leyendo'};
 $('#fRead').onclick=async()=>{
-  const btn=$('#fRead'); btn.disabled=true; $('#fProg').textContent='Cargando el lector…';
+  if(!fPages.length) return;
+  const btn=$('#fRead'); btn.disabled=true; let page=0; const n=fPages.length;
+  $('#fProg').textContent='Cargando el lector…';
+  let worker=null, total=0, photos=await IDB.get('draft'), allText='';
   try{
     const T=await loadTess();
-    const w=await T.createWorker('spa',1,{logger:m=>{ if(m.status) $('#fProg').textContent=(STEP[m.status]||m.status)+'… '+Math.round((m.progress||0)*100)+'%'; }});
-    await w.setParameters({tessedit_pageseg_mode:'6', preserve_interword_spaces:'1'});
-    const {data}=await w.recognize(drawF(2400)); await w.terminate();
-    try{ const blob=await photoBlob(); if(blob){ const arr=await IDB.get('draft'); arr.push(blob); await IDB.set('draft',arr); } }catch(e){}
-    const found=parseInvoiceText(data.text);
-    if(!st.draft.factura){ const m=data.text.match(/N[oº°]\.?\s*:?\s*([A-Z]{2,5}-?\d{4,})/i)||data.text.match(/\b([A-Z]{3,5}-?\d{5,})\b/); if(m){ st.draft.factura=m[1].replace(/\s/,''); $('#h-factura').value=st.draft.factura; } }
-    st.draft.fact=[...(st.draft.fact||[]),...found]; saveDraft();
-    $('#fProg').textContent= found.length ? `✔ Se leyeron ${found.length} productos. Revíselos abajo y corrija lo que esté mal.` : 'No se encontraron productos. Tome la foto más de cerca, derecha y con buena luz, o agréguelos a mano abajo.';
-    beep(!!found.length); renderFact(); render(); showNext();
-  }catch(e){ $('#fProg').textContent='No se pudo leer. Revise la conexión a internet (la primera vez descarga el lector) e intente de nuevo.'; }
-  finally{ btn.disabled=false; }
+    worker=await T.createWorker('spa',1,{logger:m=>{ if(m.status) $('#fProg').textContent=`${m.status==='recognizing text'?`Página ${page} de ${n}`:(STEP[m.status]||m.status)} — ${Math.round((m.progress||0)*100)}%`; }});
+    await worker.setParameters({tessedit_pageseg_mode:'6', preserve_interword_spaces:'1'});
+    const done=[];
+    for(const p of fPages){
+      page++;
+      const img=await fileToImg(p.blob);
+      const {data}=await worker.recognize(canvasFrom(img,2400,p.rot,true));
+      allText+='\n'+data.text;
+      const found=parseInvoiceText(data.text);
+      st.draft.fact=[...(st.draft.fact||[]),...found]; total+=found.length; saveDraft();
+      const ph=await toBlob(canvasFrom(img,1600,p.rot,false),0.72); if(ph){ photos.push(ph); await IDB.set('draft',photos); }
+      done.push(p); renderFact(); render();
+    }
+    fPages=fPages.filter(p=>!done.includes(p)); drawPages();
+    if(!st.draft.factura){ const m=allText.match(/N[oº°]\.?\s*:?\s*([A-Z]{2,5}-?\d{4,})/i)||allText.match(/\b([A-Z]{3,5}-?\d{5,})\b/); if(m){ st.draft.factura=m[1]; $('#h-factura').value=m[1]; saveDraft(); } }
+    $('#fProg').textContent= total ? `✔ ${n} página${n===1?'':'s'} leída${n===1?'':'s'}: ${total} productos. Revíselos abajo, corrija lo que esté mal y toque Guardar factura.` : 'No se encontraron productos. Revise que las páginas estén derechas, cerca y con buena luz, o agréguelos a mano abajo.';
+    beep(!!total);
+  }catch(e){ $('#fProg').textContent=`Se leyeron ${page>0?page-1:0} de ${n} páginas. Revise la conexión a internet (la primera vez descarga el lector) y toque Leer otra vez para las que faltan.`; fPages=fPages.slice(Math.max(0,page-1)); drawPages(); }
+  finally{ btn.disabled=false; try{ worker && await worker.terminate(); }catch(e){} }
 };
 
 function renderFact(){
@@ -456,9 +485,7 @@ const IDB={p:null, open(){ return this.p ||= new Promise((res,rej)=>{ const r=in
   async get(k){ try{ const db=await this.open(); return await new Promise(res=>{ const q=db.transaction('photos').objectStore('photos').get(k); q.onsuccess=()=>res(q.result||[]); q.onerror=()=>res([]); }); }catch(e){ return []; } },
   async set(k,v){ try{ const db=await this.open(); return await new Promise(res=>{ const t=db.transaction('photos','readwrite'); t.objectStore('photos').put(v,k); t.oncomplete=()=>res(true); t.onerror=()=>res(false); }); }catch(e){ return false; } },
   async del(k){ try{ const db=await this.open(); const t=db.transaction('photos','readwrite'); t.objectStore('photos').delete(k); }catch(e){} } };
-function photoBlob(){ return new Promise(res=>{ if(!fImg) return res(null); const w=fImg.naturalWidth,h=fImg.naturalHeight,s=Math.min(1,1600/Math.max(w,h)),W=Math.round(w*s),H=Math.round(h*s),r=((fRot%360)+360)%360;
-  const c=document.createElement('canvas'); c.width=(r%180)?H:W; c.height=(r%180)?W:H; const g=c.getContext('2d'); g.translate(c.width/2,c.height/2); g.rotate(r*Math.PI/180); g.drawImage(fImg,-W/2,-H/2,W,H);
-  c.toBlob(b=>res(b),'image/jpeg',0.72); }); }
+
 const FACTS={get(){ return LS.get('rdm2-facts',[]); }, set(v){ LS.set('rdm2-facts',v); }};
 async function saveFact(recNum){
   const d=st.draft; if(!(d.fact||[]).length) return null;
