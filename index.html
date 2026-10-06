@@ -74,6 +74,7 @@ pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);pa
 
   <section id="v-recibir" style="display:flex;flex-direction:column;gap:12px">
     <div class="row"><input id="h-proveedor" placeholder="Proveedor" autocomplete="off"><input id="h-factura" placeholder="Factura No." autocomplete="off"></div>
+    <input id="h-recibio" placeholder="👤 Nombre de quien recibe" autocomplete="name" list="recibioList"><datalist id="recibioList"></datalist>
 
     <div class="scanbox">
       <div class="cam" id="cam" hidden><video id="video" playsinline muted></video><div class="guide"></div><button class="stop" id="btnStop">Cerrar cámara</button></div>
@@ -138,7 +139,10 @@ const isDesk=()=>matchMedia('(pointer:fine)').matches;
 /* ---------- state ---------- */
 const st={names:new Map(), codes:new Map(), all:[], draft:LS.get('rdm2-draft',null)||{proveedor:'',factura:'',lines:[]}, recs:[], mode:'local', db:null};
 const saveDraft=()=>LS.set('rdm2-draft',st.draft);
-for(const f of ['proveedor','factura']){ const el=$('#h-'+f); el.value=st.draft[f]||''; el.oninput=()=>{st.draft[f]=el.value;saveDraft();}; }
+if(!st.draft.recibio) st.draft.recibio=LS.get('rdm2-recibio','');
+for(const f of ['proveedor','factura','recibio']){ const el=$('#h-'+f); el.value=st.draft[f]||''; el.oninput=()=>{st.draft[f]=el.value;saveDraft(); if(f==='recibio') LS.set('rdm2-recibio',el.value.trim());}; }
+function fillRecibioList(){ const names=[...new Set([...(LS.get('rdm2-names',[])),LS.get('rdm2-recibio','')].filter(Boolean))]; $('#recibioList').innerHTML=names.map(n=>`<option value="${esc(n)}">`).join(''); }
+fillRecibioList();
 
 /* product index: code -> name */
 function rebuild(baseItems, learned){
@@ -467,17 +471,19 @@ $('#items').addEventListener('click',e=>{ const r=e.target.closest('.it'); if(r&
 function textOf(r){ const und=r.lines.reduce((s,l)=>s+num(l.cant),0);
   const c=(r.fact&&r.fact.length)?compare(r.lines,r.fact):null;
   const extra=c?['','COMPARACIÓN CON LA FACTURA:',...c.rows.filter(x=>x.rec!==x.g.qty).map(x=>`- ${x.g.desc}: facturado ${x.g.qty}, llegó ${x.rec} → ${x.rec<x.g.qty?'FALTAN '+(x.g.qty-x.rec):'sobran '+(x.rec-x.g.qty)}`),...c.extra.map(l=>`- ${l.descripcion}: llegó ${num(l.cant)}, NO está en la factura`),c.rows.every(x=>x.rec===x.g.qty)&&!c.extra.length?'Todo llegó completo ✔':'']:[];
-  return [`RECEPCIÓN${r.numero?' '+r.numero:''} — Mercados Don Manuel`,`Proveedor: ${r.proveedor||'—'} | Factura: ${r.factura||'—'}${r.fecha?' | '+r.fecha:''}`,'',...r.lines.map(l=>`${num(l.cant)}  ${l.descripcion}  (${l.barras})`),'',`Productos: ${r.lines.length} | Unidades: ${und}`,...extra].join('\n'); }
+  return [`RECEPCIÓN${r.numero?' '+r.numero:''} — Mercados Don Manuel`,`Proveedor: ${r.proveedor||'—'} | Factura: ${r.factura||'—'}${r.fecha?' | '+r.fecha:''}`,`Recibió: ${r.recibio||'—'}`,'',...r.lines.map(l=>`${num(l.cant)}  ${l.descripcion}  (${l.barras})`),'',`Productos: ${r.lines.length} | Unidades: ${und}`,...extra].join('\n'); }
 async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('Copiado'); }catch(e){ $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="lbl">Seleccione y copie</div><pre class="txt">${esc(t)}</pre><button id="x">Cerrar</button>`; $('#x').onclick=close; } }
 async function saveRec(){
   const d=st.draft; if(!d.proveedor){ toast('Escriba el proveedor'); $('#h-proveedor').focus(); return; }
+  if(!(d.recibio||'').trim()){ toast('Escriba el nombre de quien recibe'); $('#h-recibio').focus(); return; }
   const z=n=>String(n).padStart(2,'0'), t=new Date();
-  const rec={numero:`REC-${t.getFullYear()}${z(t.getMonth()+1)}${z(t.getDate())}-${z(t.getHours())}${z(t.getMinutes())}`, fecha:today(), proveedor:d.proveedor, factura:d.factura||'',
+  const rec={numero:`REC-${t.getFullYear()}${z(t.getMonth()+1)}${z(t.getDate())}-${z(t.getHours())}${z(t.getMinutes())}`, fecha:today(), proveedor:d.proveedor, factura:d.factura||'', recibio:d.recibio.trim(),
     lines:d.lines.map(l=>({barras:l.barras, descripcion:l.descripcion, cant:num(l.cant)})), fact:(d.fact||[]).map(x=>({...x})), creado:Date.now()};
   try{ await storeRec(rec); }catch(e){ toast('No se pudo guardar. Intente de nuevo.'); return; }
   if((d.fact||[]).length){ await saveFact(rec.numero); }
   IDB.del('draft');
-  st.draft={proveedor:'',factura:'',lines:[],fact:[],factId:null}; $('#h-proveedor').value=''; $('#h-factura').value=''; saveDraft(); render(); renderFact(); toast('Recepción '+rec.numero+' guardada');
+  LS.set('rdm2-names',[...new Set([d.recibio.trim(),...LS.get('rdm2-names',[])])].slice(0,15)); fillRecibioList();
+  st.draft={proveedor:'',factura:'',recibio:d.recibio.trim(),lines:[],fact:[],factId:null}; $('#h-proveedor').value=''; $('#h-factura').value=''; saveDraft(); render(); renderFact(); toast('Recepción '+rec.numero+' guardada');
 }
 
 /* ---------- saved invoices (this phone: list in localStorage, photos in IndexedDB) ---------- */
@@ -493,7 +499,7 @@ async function saveFact(recNum){
   const id=d.factId||('F'+Date.now());
   const tot=d.fact.reduce((s,x)=>s+num(x.qty)*num(x.price),0);
   const c=compare(d.lines||[],d.fact);
-  const obj={id, proveedor:d.proveedor, factura:d.factura||'', fecha:today(), lines:d.fact.map(x=>({...x})), total:Math.round(tot),
+  const obj={id, proveedor:d.proveedor, factura:d.factura||'', recibio:d.recibio||'', fecha:today(), lines:d.fact.map(x=>({...x})), total:Math.round(tot),
     estado:(d.lines||[]).length?`${c.ok}/${c.rows.length} completos`:'Sin recibir', recepcion:recNum||'', guardada:Date.now()};
   const list=FACTS.get().filter(x=>x.id!==id); list.unshift(obj); FACTS.set(list.slice(0,300));
   const ph=await IDB.get('draft'); if(ph.length) await IDB.set(id, ph);
@@ -509,7 +515,7 @@ function renderFacts(){
 async function openFact(f){
   const photos=await IDB.get(f.id); const urls=photos.map(b=>URL.createObjectURL(b));
   $('#ov').hidden=false;
-  $('#sheet').innerHTML=`<div class="pname">${esc(f.proveedor)}</div><div class="pcode">Factura ${esc(f.factura||'—')} · ${esc(f.fecha)}${f.recepcion?' · '+esc(f.recepcion):''}</div>
+  $('#sheet').innerHTML=`<div class="pname">${esc(f.proveedor)}</div><div class="pcode">Factura ${esc(f.factura||'—')} · ${esc(f.fecha)}${f.recibio?' · Recibió: '+esc(f.recibio):''}${f.recepcion?' · '+esc(f.recepcion):''}</div>
     ${urls.map(u=>`<a href="${u}" target="_blank"><img src="${u}" alt="Foto de la factura" style="width:100%;border-radius:8px;border:1px solid var(--line)"></a>`).join('')}
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem"><tr style="text-align:left;color:var(--muted);font-size:.7rem;text-transform:uppercase"><th>Código</th><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Precio U.</th><th style="text-align:right">Total</th></tr>
       ${f.lines.map(x=>`<tr style="border-top:1px solid var(--line)"><td class="mono">${esc(x.code)}</td><td>${esc(x.desc)}</td><td class="mono" style="text-align:right">${num(x.qty)}</td><td class="mono" style="text-align:right">${money0(x.price)}</td><td class="mono" style="text-align:right">${money0(num(x.qty)*num(x.price))}</td></tr>`).join('')}
@@ -526,7 +532,7 @@ $('#hTabR').onclick=()=>{ $('#histF').hidden=true; $('#hist').hidden=false; $('#
 /* ---------- history ---------- */
 function renderHist(){
   renderFacts();
-  $('#hist').innerHTML = st.recs.length ? `<div class="list">${st.recs.map((r,i)=>`<div class="it" data-h="${i}" style="grid-template-columns:minmax(0,1fr) auto;cursor:pointer"><div><div class="n">${esc(r.proveedor)}${r.factura?' · <span class="mono">'+esc(r.factura)+'</span>':''}</div><div class="c">${esc(r.numero)} · ${esc(r.fecha)}</div></div><div class="mono">${(r.lines||[]).length} prod.</div></div>`).join('')}</div>`
+  $('#hist').innerHTML = st.recs.length ? `<div class="list">${st.recs.map((r,i)=>`<div class="it" data-h="${i}" style="grid-template-columns:minmax(0,1fr) auto;cursor:pointer"><div><div class="n">${esc(r.proveedor)}${r.factura?' · <span class="mono">'+esc(r.factura)+'</span>':''}</div><div class="c">${esc(r.numero)} · ${esc(r.fecha)}${r.recibio?" · Recibió: "+esc(r.recibio):""}</div></div><div class="mono">${(r.lines||[]).length} prod.</div></div>`).join('')}</div>`
     : '<div class="empty">Aún no hay recepciones guardadas.</div>';
   $('#hist').querySelectorAll('[data-h]').forEach(el=>el.onclick=()=>{ const r=st.recs[+el.dataset.h]; $('#ov').hidden=false;
     $('#sheet').innerHTML=`<div class="pname">${esc(r.proveedor)}</div><div class="pcode">${esc(r.numero)} · ${esc(r.factura||'')}</div><pre class="txt">${esc(textOf(r))}</pre><div class="btns"><button id="x">Cerrar</button></div>`;
