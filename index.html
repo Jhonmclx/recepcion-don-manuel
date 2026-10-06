@@ -69,7 +69,7 @@ pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);pa
 
 </head><body>
 <div class="wrap">
-  <header><div><h1>Recepción de mercancía</h1><div class="sub">Mercados Don Manuel</div></div><div class="sub" id="status">Cargando productos…</div></header>
+  <header><div><h1>Recepción de mercancía</h1><div class="sub">Mercados Don Manuel</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><button id="btnShare" style="padding:8px 12px;font-size:.9rem">📤 Compartir app</button><div class="sub" id="status">Cargando productos…</div></div></header>
   <nav><button data-tab="recibir" aria-selected="true">Recibir</button><button data-tab="fact" aria-selected="false">Factura</button><button data-tab="hist" aria-selected="false">Historial</button></nav>
 
   <section id="v-recibir" style="display:flex;flex-direction:column;gap:12px">
@@ -512,10 +512,14 @@ $('#srvUrl').value=SRV.cfg.url||''; $('#srvKey').value=SRV.cfg.clave||'';
 $('#srvSave').onclick=async()=>{ const url=$('#srvUrl').value.trim(), clave=$('#srvKey').value.trim(); if(!url||!clave){ $('#srvMsg').textContent='Pegue la URL /exec y la clave.'; return; }
   LS.set('rdm-srv',{url,clave}); $('#srvMsg').textContent='Probando…';
   try{ const r=await apiGet('ping'); $('#srvMsg').textContent=r.ok?'Conectado ✔ Recargando…':'Clave incorrecta.'; if(r.ok) setTimeout(()=>location.reload(),600); }catch(e){ $('#srvMsg').textContent='No se pudo conectar.'; } };
-$('#srvLink').onclick=async()=>{ const c=SRV.cfg; if(!SRV.on) return; const link=location.origin+location.pathname+'#s='+btoa(c.url)+'&k='+encodeURIComponent(c.clave); try{ await navigator.clipboard.writeText(link); toast('Link copiado'); }catch(e){ $('#srvMsg').textContent=link; } };
+$('#srvLink').onclick=async()=>{ const c=SRV.cfg; if(!SRV.on){ $('#srvMsg').textContent='Este botón funciona cuando el servidor (hoja de Google) esté conectado. Para compartir la app use el botón 📤 Compartir app de arriba.'; return; } const link=location.origin+location.pathname+'#s='+btoa(c.url)+'&k='+encodeURIComponent(c.clave); try{ await navigator.clipboard.writeText(link); toast('Link copiado'); }catch(e){ $('#srvMsg').textContent=link; } };
 
 if(!Array.isArray(st.draft.fact)) st.draft.fact=[];
 render(); renderFact(); startStorage();
+$('#btnShare').onclick=async()=>{ const url=location.origin+location.pathname;
+  if(navigator.share){ try{ await navigator.share({title:'Recepción Don Manuel',text:'App de recepción de mercancía',url}); return; }catch(e){ if(e&&e.name==='AbortError') return; } }
+  try{ await navigator.clipboard.writeText(url); toast('Link copiado: péguelo donde quiera'); return; }catch(e){}
+  $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="lbl">Mantenga presionado el link para copiarlo</div><input id="shareUrl" readonly value="${url}" style="font:500 1rem var(--f-mono)"><button id="x">Cerrar</button>`; $('#shareUrl').select(); $('#x').onclick=close; };
 if(isDesk()) $('#code').focus();
 })();
 </script>
