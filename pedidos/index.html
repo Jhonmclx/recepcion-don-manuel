@@ -88,10 +88,10 @@ textarea{min-height:60px;resize:vertical}
 
   <!-- primera vez: conectar al servidor -->
   <div class="panel" id="setup" hidden>
-    <b>Conectar con el servidor de pedidos</b>
-    <div class="note">Pegue la dirección del servidor (la URL que termina en <span class="mono">/exec</span>) y la clave. Solo se hace una vez por celular. Si alguien le mandó el link de conexión, ábralo y queda listo solo.</div>
-    <input id="srvUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
-    <input id="srvKey" placeholder="Clave" autocomplete="off">
+    <b>🔑 Escriba la clave del almacén</b>
+    <div class="note">Solo se hace una vez en cada celular. Pídale la clave al encargado.</div>
+    <input id="srvKey" placeholder="Clave" autocomplete="off" inputmode="text" style="font-size:1.3rem;text-align:center">
+    <details><summary class="note">Cambiar servidor (solo encargado)</summary><input id="srvUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" style="margin-top:8px"></details>
     <div class="btns"><button class="primary" id="srvSave">Conectar</button></div>
     <div class="note" id="srvMsg"></div>
   </div>
@@ -148,7 +148,8 @@ let ac; function tone(ok){ try{ ac=ac||new (window.AudioContext||window.webkitAu
 
 /* ---------- servidor (Hoja de Google) ---------- */
 try{ const h=new URLSearchParams(location.hash.slice(1)); if(h.get('s')&&h.get('k')){ LS.set('pb-srv',{url:atob(h.get('s')),clave:h.get('k')}); history.replaceState(null,'',location.pathname); } }catch(e){}
-const SRV={get cfg(){return LS.get('pb-srv',{});}, get on(){const c=this.cfg;return !!(c.url&&c.clave);}};
+const DEFAULT_URL='https://script.google.com/macros/s/AKfycby6M8sPxw3nCQtPY7TTfyqJ-MRdQasTqP1ClkXyCiJVRM-cGiT8f4bwBewA0yzqExls/exec';
+const SRV={get cfg(){const c=LS.get('pb-srv',{}); return {url:c.url||DEFAULT_URL, clave:c.clave||''};}, get on(){const c=this.cfg;return !!(c.url&&c.clave);}};
 async function apiGet(accion){ const c=SRV.cfg; const r=await fetch(c.url+'?'+new URLSearchParams({accion,clave:c.clave,t:Date.now()})); return r.json(); }
 async function apiPost(b){ const c=SRV.cfg; const r=await fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...b,clave:c.clave})}); return r.json(); }
 let flushing=false;
@@ -358,12 +359,13 @@ function pickScan(v){ const o=st.orders.find(x=>x.id===st.open); $('#code').valu
 function renderAllOrders(){ const n=st.orders.filter(o=>o.estado==='enviado').length; $('#badge').hidden=!n; $('#badge').textContent=n; renderMine(); if(st.role==='bodega') renderQueue(); }
 
 /* ---------- conexión ---------- */
-function drawSetup(){ $('#setup').hidden=SRV.on; const c=SRV.cfg; $('#srvUrl').value=c.url||''; $('#srvKey').value=c.clave||''; }
-$('#srvSave').onclick=async()=>{ const url=$('#srvUrl').value.trim(), clave=$('#srvKey').value.trim();
-  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)||!clave){ $('#srvMsg').textContent='Pegue la URL que termina en /exec y escriba la clave.'; return; }
+function drawSetup(){ $('#setup').hidden=SRV.on; const c=SRV.cfg; $('#srvUrl').value=c.url===DEFAULT_URL?'':c.url; $('#srvKey').value=c.clave||''; }
+$('#srvSave').onclick=async()=>{ const url=$('#srvUrl').value.trim()||DEFAULT_URL, clave=$('#srvKey').value.trim();
+  if(!clave){ $('#srvMsg').textContent='Escriba la clave.'; $('#srvKey').focus(); return; } if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)){ $('#srvMsg').textContent='La dirección del servidor no es válida.'; return; }
   LS.set('pb-srv',{url,clave}); $('#srvMsg').textContent='Probando…';
   try{ const r=await apiGet('ping'); if(r.ok){ $('#srvMsg').textContent=''; drawSetup(); toast('Conectado ✔'); poll(true); } else { $('#srvMsg').textContent=r.error==='clave'?'La clave no coincide con la del servidor.':'El servidor respondió con error.'; LS.set('pb-srv',{}); } }
-  catch(e){ $('#srvMsg').textContent='No se pudo conectar. Revise la URL y que la implementación diga “Cualquier persona”.'; LS.set('pb-srv',{}); } };
+  catch(e){ $('#srvMsg').textContent='No se pudo conectar. Revise que tenga internet e intente de nuevo.'; LS.set('pb-srv',{}); } };
+$('#srvKey').addEventListener('keydown',e=>{ if(e.key==='Enter') $('#srvSave').click(); });
 
 drawSetup(); drawSedes(); renderDraft(); setRole(st.role); showPending(); status(SRV.on?'Conectando…':'Sin conectar');
 loadProducts(); poll(true);

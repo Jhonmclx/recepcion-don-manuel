@@ -1,5 +1,5 @@
 // Recepción Don Manuel — funciona sin internet: guarda la app y la lista de productos en el celular
-const CACHE='rdm-v4';
+const CACHE='rdm-v5';
 const CORE=['./','./index.html','./inventario/','./inventario/index.html','./inventario/manifest.json','./pedidos/','./pedidos/index.html','./pedidos/manifest.json','./facturas/','./facturas/index.html','./facturas/manifest.json','./menu/','./menu/index.html','./icons/recepcion-192.png','./icons/facturas-192.png','./icons/inventario-192.png','./icons/pedidos-192.png','https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js','./catalogo.json','./manifest.json','./icon-192.png','./icon-512.png',
   'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js'];
 self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>Promise.allSettled(CORE.map(u=>c.add(new Request(u,{mode:u.startsWith('http')?'no-cors':'same-origin'}))))).then(()=>self.skipWaiting())); });
