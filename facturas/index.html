@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14232b"><link rel="manifest" href="manifest.json"><link rel="icon" href="icons/recepcion-192.png"><link rel="apple-touch-icon" href="icons/recepcion-192.png">
-<title>Recepción Don Manuel</title>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#5a2a1e"><link rel="manifest" href="manifest.json"><link rel="icon" href="../icons/facturas-192.png"><link rel="apple-touch-icon" href="../icons/facturas-192.png">
+<title>Facturas Don Manuel</title>
 <meta name="robots" content="noindex,nofollow">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
@@ -124,6 +124,7 @@ pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);pa
 <div class="overlay" id="ov" hidden><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast" hidden></div>
 
+<script>window.START_TAB="fact";</script>
 <script>
 (() => {
 const $=s=>document.querySelector(s);
@@ -187,7 +188,7 @@ async function startStorage(){
     return;
   }
   let base=LS.get('rdm2-base',null);
-  if(!base){ try{ base=(await (await fetch('catalogo.json')).json()).items; }catch(e){ base=[]; } }
+  if(!base){ try{ base=(await (await fetch('../catalogo.json')).json()).items; }catch(e){ base=[]; } }
   curBase=base; rebuild(base,local); st.recs=LS.get('rdm2-recs',[]); renderHist();
 }
 async function learnProduct(code,name){
@@ -550,7 +551,7 @@ $('#srvLink').onclick=async()=>{ const c=SRV.cfg; if(!SRV.on){ $('#srvMsg').text
 if(!Array.isArray(st.draft.fact)) st.draft.fact=[];
 render(); renderFact(); startStorage();
 if(window.START_TAB||location.hash==='#fact'){ const b=document.querySelector('nav button[data-tab='+(window.START_TAB||'fact')+']'); if(b) b.click(); }
-if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }
+if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){ try{ navigator.serviceWorker.register('../sw.js',{scope:'../'}); }catch(e){} }
 window.addEventListener('online',()=>toast('Conexión recuperada')); window.addEventListener('offline',()=>toast('Sin internet: puede seguir escaneando, todo queda guardado en el celular'));
 $('#btnShare').onclick=async()=>{ const url=location.origin+location.pathname;
   if(navigator.share){ try{ await navigator.share({title:'Recepción Don Manuel',text:'App de recepción de mercancía',url}); return; }catch(e){ if(e&&e.name==='AbortError') return; } }
