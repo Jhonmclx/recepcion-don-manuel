@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#22231d">
+<meta name="robots" content="noindex,nofollow">
+<title>Pedidos a Bodega</title>
+<link rel="manifest" href="manifest.json"><link rel="icon" href="../icon-192.png"><link rel="apple-touch-icon" href="../icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+/* Layout: one column; "Hacer pedido" builds an order per sede, "Bodega" works a live queue — both scan with the camera */
+:root{--bg:#f0efe9;--surface:#fff;--sunk:#e6e4da;--ink:#22231d;--muted:#66675c;--line:#d6d3c6;--accent:#2f5d8a;--accent-ink:#fff;--scan:#e3a21a;--scan-ink:#1d1606;--go:#2c7a3a;--wait:#a85600;--wait-bg:#fbefdf;--new:#b3261e;--new-bg:#fbe7e5;
+  --f-ui:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;--f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#15161a;--surface:#1d1f24;--sunk:#262830;--ink:#e8e8e2;--muted:#9fa094;--line:#33353d;--accent:#7fb0e0;--accent-ink:#0c1a28;--scan:#f0b43a;--go:#6cc17a;--wait:#f0a24a;--wait-bg:#33260f;--new:#ef7a70;--new-bg:#3a1a17;color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 var(--f-ui);padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:10px 90px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+h1{margin:0;font-size:1.3rem;font-weight:800}
+.sub{color:var(--muted);font-size:.8rem}
+.roles{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.roles button{padding:12px;font-size:1rem}
+.roles button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.badge{display:inline-block;min-width:1.5em;padding:0 6px;border-radius:99px;background:var(--new);color:#fff;font:600 .8rem var(--f-mono);margin-left:6px}
+button{font:600 1rem var(--f-ui);border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:11px 16px;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+.primary{background:var(--accent)!important;color:var(--accent-ink)!important;border-color:var(--accent)!important}
+.go{background:var(--go)!important;color:#fff!important;border-color:var(--go)!important}
+.scanbtn{background:var(--scan)!important;color:var(--scan-ink)!important;border-color:var(--scan)!important}
+.ghost{background:none;border-color:transparent;color:var(--muted)}
+input,textarea{font:500 1rem var(--f-ui);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0}
+textarea{min-height:60px;resize:vertical}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.lbl{font-size:.74rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.note{font-size:.85rem;color:var(--muted)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.sedes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.sedes button{padding:10px 4px;font-size:.88rem;line-height:1.15}
+.sedes button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+@media (max-width:440px){.sedes{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.btns{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+.it{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.it:last-child{border-bottom:0}
+.it .n{font-weight:600}
+.it .c{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.res button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;font-weight:500;padding:10px 12px}
+.res button:last-child{border-bottom:0}
+.chip{font:600 .7rem var(--f-ui);text-transform:uppercase;letter-spacing:.05em;padding:3px 9px;border-radius:99px;white-space:nowrap;background:var(--sunk);color:var(--muted)}
+.st-enviado{background:var(--new-bg);color:var(--new)} .st-alistando{background:var(--wait-bg);color:var(--wait)} .st-despachado{background:color-mix(in srgb,var(--go) 18%,transparent);color:var(--go)} .st-recibido{background:var(--sunk);color:var(--muted)}
+.order{border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.order.enviado{border-left:5px solid var(--new)} .order.alistando{border-left:5px solid var(--wait)} .order.despachado{border-left:5px solid var(--go)}
+.ohead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:12px;cursor:pointer;align-items:center}
+.ohead .t{font-weight:800;font-size:1.05rem}
+.obody{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:10px}
+.pick{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)}
+.pick:last-child{border-bottom:0}
+.pick input[type=number]{width:76px;text-align:right;font:600 1.05rem var(--f-mono);padding:7px}
+.ck{width:26px;height:26px;accent-color:var(--go)}
+.pick.done .pn{text-decoration:line-through;color:var(--muted)}
+.pick.flash{background:color-mix(in srgb,var(--scan) 25%,var(--surface))}
+.qtytag{font:600 1rem var(--f-mono)}
+.empty{border:1px dashed var(--line);border-radius:12px;padding:18px;color:var(--muted)}
+.overlay{position:fixed;inset:0;background:rgba(20,20,16,.55);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.sheet{background:var(--surface);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px;max-height:92vh;overflow:auto}
+@media (min-width:700px){.overlay{align-items:center}.sheet{border-radius:16px}}
+.pname{font-size:1.25rem;font-weight:800;line-height:1.2}
+.qty{font:600 2.1rem var(--f-mono)!important;text-align:center;padding:12px!important}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 18px);background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:10px;font-weight:600;z-index:40;max-width:calc(100% - 32px)}
+.banner{background:var(--wait-bg);color:var(--wait);border-radius:10px;padding:10px 12px;font-weight:600}
+.seg{display:flex;gap:6px}
+.seg button{padding:8px 12px;font-size:.9rem}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.scanbox{background:var(--ink);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.scanbox .in{display:grid;grid-template-columns:1fr auto;gap:8px}
+.scanbox input{font:500 1.15rem var(--f-mono);border:2px solid var(--scan)}
+.cam{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3;max-height:44vh}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cam .guide{position:absolute;left:8%;right:8%;top:33%;bottom:33%;border:3px solid var(--scan);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+.cam .stop{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;border-color:rgba(255,255,255,.3);padding:8px 12px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><div><h1>Pedidos a Bodega</h1><div class="sub">Mercados Don Manuel · Sáchica · Alto · Circunvalar · Parque Nariño</div></div><div class="sub" id="status">Cargando…</div></header>
+
+  <!-- primera vez: conectar al servidor -->
+  <div class="panel" id="setup" hidden>
+    <b>Conectar con el servidor de pedidos</b>
+    <div class="note">Pegue la dirección del servidor (la URL que termina en <span class="mono">/exec</span>) y la clave. Solo se hace una vez por celular. Si alguien le mandó el link de conexión, ábralo y queda listo solo.</div>
+    <input id="srvUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+    <input id="srvKey" placeholder="Clave" autocomplete="off">
+    <div class="btns"><button class="primary" id="srvSave">Conectar</button></div>
+    <div class="note" id="srvMsg"></div>
+  </div>
+
+  <div class="roles"><button id="rolePedir" aria-pressed="true">📝 Hacer pedido</button><button id="roleBodega" aria-pressed="false">📦 Bodega<span class="badge" id="badge" hidden>0</span></button></div>
+  <input id="me" placeholder="👤 Su nombre" autocomplete="name">
+  <div class="banner" id="pendBanner" hidden></div>
+
+  <!-- PEDIR -->
+  <section id="v-pedir" style="display:flex;flex-direction:column;gap:12px">
+    <div class="panel">
+      <span class="lbl">¿Para qué sede es el pedido?</span>
+      <div class="sedes" id="sedes"></div>
+    </div>
+    <div id="homePedir"></div>
+    <div class="list res" id="res" hidden></div>
+    <div id="draft"></div>
+    <div class="panel"><div class="btns" style="justify-content:space-between"><span class="lbl">Pedidos enviados</span><button class="ghost" id="btnShareLink" style="padding:4px 8px;font-size:.85rem">🔗 Link para bodega</button></div><div id="mine"></div></div>
+  </section>
+
+  <!-- BODEGA -->
+  <section id="v-bodega" hidden style="display:flex;flex-direction:column;gap:12px">
+    <div class="btns" style="justify-content:space-between">
+      <div class="seg"><button id="fPend" aria-pressed="true">Por alistar</button><button id="fDone" aria-pressed="false">Despachados</button></div>
+      <button id="btnSound">🔔 Activar sonido</button>
+    </div>
+    <div id="queue"></div>
+  </section>
+</div>
+
+<!-- escáner (se mueve entre secciones) -->
+<div id="scanner" class="scanbox">
+  <div class="cam" id="cam" hidden><video id="video" playsinline muted></video><div class="guide"></div><button class="stop" id="btnStop">Cerrar cámara</button></div>
+  <div class="in"><input id="code" autocomplete="off" placeholder="Escanee, o escriba nombre o código…"><button class="scanbtn" id="btnGo">OK</button></div>
+  <div class="btns"><button class="scanbtn" id="btnCam">📷 Escanear con cámara</button></div>
+  <div class="note" id="camMsg" style="color:#cfd2c8"></div>
+</div>
+
+<div class="overlay" id="ov" hidden><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>{const n=parseFloat(String(v??'').replace(',','.'));return isFinite(n)?n:0;};
+const norm=s=>String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
+let tT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(tT);tT=setTimeout(()=>t.hidden=true,2600);}
+const fecha=ms=>{ if(!ms) return ''; const d=new Date(ms); const same=d.toDateString()===new Date().toDateString(); return (same?'Hoy ':d.toLocaleDateString('es-CO',{day:'2-digit',month:'short'})+' ')+d.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'}); };
+const SEDES=['Sáchica','Alto','Circunvalar','Parque Nariño'];
+const EST={enviado:'Nuevo',alistando:'Alistando',despachado:'Despachado',recibido:'Recibido'};
+let ac; function tone(ok){ try{ ac=ac||new (window.AudioContext||window.webkitAudioContext)(); const o=ac.createOscillator(),g=ac.createGain(); o.frequency.value=ok?1250:300; g.gain.value=.1; o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime+(ok?.1:.3)); }catch(e){} try{navigator.vibrate&&navigator.vibrate(ok?60:[80,60,80]);}catch(e){} }
+
+/* ---------- servidor (Hoja de Google) ---------- */
+try{ const h=new URLSearchParams(location.hash.slice(1)); if(h.get('s')&&h.get('k')){ LS.set('pb-srv',{url:atob(h.get('s')),clave:h.get('k')}); history.replaceState(null,'',location.pathname); } }catch(e){}
+const SRV={get cfg(){return LS.get('pb-srv',{});}, get on(){const c=this.cfg;return !!(c.url&&c.clave);}};
+async function apiGet(accion){ const c=SRV.cfg; const r=await fetch(c.url+'?'+new URLSearchParams({accion,clave:c.clave,t:Date.now()})); return r.json(); }
+async function apiPost(b){ const c=SRV.cfg; const r=await fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...b,clave:c.clave})}); return r.json(); }
+let flushing=false;
+async function flush(){ if(flushing||!SRV.on) return; flushing=true; let q=LS.get('pb-queue',[]);
+  try{ while(q.length){ let r; try{ r=await apiPost(q[0]); }catch(e){ break; } if(r&&r.error==='clave'){ status('Clave incorrecta'); break; } q.shift(); LS.set('pb-queue',q); if(r&&r.version) lastVer=r.version; } }
+  finally{ flushing=false; showPending(); } }
+function send(op){ const q=LS.get('pb-queue',[]); q.push(op); LS.set('pb-queue',q); showPending(); flush(); }
+function showPending(){ const n=LS.get('pb-queue',[]).length; $('#pendBanner').hidden=!n; $('#pendBanner').textContent=`⏳ ${n} cambio(s) sin enviar: se envían solos cuando haya internet.`; }
+function status(t){ $('#status').textContent=t; }
+let lastVer=null, polling=false;
+async function poll(force){ if(!SRV.on||polling||document.hidden) return; polling=true;
+  try{ await flush(); const v=await apiGet('version'); if(!v.ok){ status(v.error==='clave'?'⚠ Clave incorrecta':'⚠ Error del servidor'); return; }
+    if(force||v.version!==lastVer){ const r=await apiGet('pedidos'); if(r.ok){ lastVer=r.version; mergeOrders(r.pedidos); } }
+    status('● En línea'); }
+  catch(e){ status(navigator.onLine===false?'○ Sin internet':'○ Sin conexión al servidor'); }
+  finally{ polling=false; } }
+setInterval(()=>poll(false),12000);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) poll(false); });
+window.addEventListener('online',()=>poll(true));
+
+/* ---------- estado ---------- */
+const st={byCode:new Map(), prods:[], orders:LS.get('pb-orders',[]), role:LS.get('pb-role','pedir'), filter:'pend', open:LS.get('pb-open',null), typed:{}, sound:false, first:true, flash:null,
+  draft:LS.get('pb-draft',{sede:'',items:[],nota:''})};
+const saveDraft=()=>LS.set('pb-draft',st.draft);
+$('#me').value=LS.get('pb-me',''); $('#me').oninput=()=>LS.set('pb-me',$('#me').value.trim());
+const me=()=>$('#me').value.trim();
+function mergeOrders(list){
+  const queued=new Set(LS.get('pb-queue',[]).map(o=>o.pedido?o.pedido.id:o.id));
+  const local=new Map(st.orders.map(o=>[o.id,o]));
+  const prev=new Set(st.orders.map(o=>o.id));
+  const next=list.map(o=> queued.has(o.id)&&local.has(o.id) ? local.get(o.id) : o);
+  for(const o of st.orders) if(queued.has(o.id) && !next.some(x=>x.id===o.id)) next.push(o);   // creados sin enviar aún
+  next.sort((a,b)=>b.creado-a.creado);
+  const nuevos=next.filter(o=>o.estado==='enviado'&&!prev.has(o.id));
+  st.orders=next; LS.set('pb-orders',next.slice(0,300));
+  if(!st.first && nuevos.length){ ding(); if(st.role==='bodega') toast(`📦 Nuevo pedido de ${nuevos[0].sede}`); }
+  st.first=false; renderAllOrders();
+}
+
+/* ---------- productos ---------- */
+async function loadProducts(){ let items=[]; try{ items=(await (await fetch('../catalogo.json')).json()).items||[]; }catch(e){}
+  const m=new Map(); for(const it of items){ if(it.b) m.set(String(it.b),it.n); if(it.k) m.set(String(it.k),it.n); }
+  for(const p of LS.get('rdm2-learned',[])) for(const c of p.codes||[]) m.set(String(c),p.name);
+  for(const [c,n] of Object.entries(LS.get('pb-names',{}))) m.set(c,n);
+  st.byCode=m; const seen=new Set(); st.prods=[];
+  for(const [c,n] of m){ st.prods.push({c,n,k:norm(n)}); } }
+function find(code){ code=String(code||'').trim(); const v=[code,code.replace(/^0+/,'')]; if(/^\d{12}$/.test(code)) v.push('0'+code); for(const c of v){ const n=st.byCode.get(c); if(n) return {code:c,name:n}; } return null; }
+
+/* ---------- roles ---------- */
+function setRole(r){ st.role=r; LS.set('pb-role',r); $('#rolePedir').setAttribute('aria-pressed',r==='pedir'); $('#roleBodega').setAttribute('aria-pressed',r==='bodega'); $('#v-pedir').hidden=r!=='pedir'; $('#v-bodega').hidden=r!=='bodega'; mountScanner(); renderAllOrders(); }
+$('#rolePedir').onclick=()=>setRole('pedir'); $('#roleBodega').onclick=()=>setRole('bodega');
+
+/* ---------- escáner ---------- */
+function mountScanner(){
+  if(st.role==='pedir'){ $('#homePedir').appendChild($('#scanner')); $('#code').placeholder='Escanee, o escriba nombre o código…'; $('#scanner').hidden=false; return; }
+  const slot=document.querySelector('#queue [data-scanslot]');
+  if(slot){ slot.appendChild($('#scanner')); $('#code').placeholder='Escanee el producto que va alistando…'; $('#scanner').hidden=false; } else { $('#scanner').hidden=true; stopCam(); document.body.appendChild($('#scanner')); }
+}
+let paused=false, stream=null, camOn=false, det=null, zx=null, lastCode='', lastAt=0;
+const video=$('#video'), cv=document.createElement('canvas'), cx=cv.getContext('2d',{willReadFrequently:true});
+$('#btnCam').onclick=async()=>{
+  try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false}); }
+  catch(e){ $('#camMsg').textContent= e.name==='NotAllowedError'?'Permiso de cámara negado: actívelo en el navegador para este sitio.':'No se pudo abrir la cámara.'; return; }
+  video.srcObject=stream; await video.play().catch(()=>{}); $('#cam').hidden=false; $('#btnCam').hidden=true; camOn=true; $('#camMsg').textContent='';
+  if('BarcodeDetector' in window){ try{ const sup=await BarcodeDetector.getSupportedFormats(); const w=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf'].filter(x=>sup.includes(x)); if(w.length) det=new BarcodeDetector({formats:w}); }catch(e){} }
+  if(!det && window.ZXing){ const Z=ZXing,h=new Map(); h.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.UPC_A,Z.BarcodeFormat.UPC_E,Z.BarcodeFormat.CODE_128,Z.BarcodeFormat.CODE_39,Z.BarcodeFormat.ITF]); zx=new Z.MultiFormatReader(); zx.setHints(h); }
+  loop(); };
+function stopCam(){ camOn=false; if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; $('#cam').hidden=true; $('#btnCam').hidden=false; }
+$('#btnStop').onclick=stopCam;
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopCam(); });
+async function loop(){ if(!camOn) return;
+  if(!paused && video.readyState>=2){ let code=null;
+    try{ if(det){ const r=await det.detect(video); if(r.length) code=r[0].rawValue; }
+      else if(zx){ const vw=video.videoWidth,vh=video.videoHeight,sw=Math.round(vw*.84),sh=Math.round(vh*.4); cv.width=sw; cv.height=sh; cx.drawImage(video,(vw-sw)/2,(vh-sh)/2,sw,sh,0,0,sw,sh);
+        try{ code=zx.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(cv)))).getText(); }catch(e){ zx.reset(); } } }catch(e){}
+    if(code && !(code===lastCode && Date.now()-lastAt<2500)){ lastCode=code; lastAt=Date.now(); onScan(code,true); } }
+  setTimeout(()=>requestAnimationFrame(loop), det?80:140); }
+let qT;
+$('#code').addEventListener('input',()=>{ if(st.role!=='pedir') return; clearTimeout(qT); qT=setTimeout(search,150); });
+$('#code').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); onScan($('#code').value,false); } });
+$('#btnGo').onclick=()=>onScan($('#code').value,false);
+function onScan(raw,fromCam){ const v=String(raw||'').trim(); if(!v) return;
+  if(st.role==='bodega') return pickScan(v);
+  const f=find(v); if(f){ tone(true); $('#code').value=''; $('#res').hidden=true; return askQty(f.code,f.name); }
+  if(fromCam||/^\d{6,14}$/.test(v)){ tone(false); $('#code').value=''; $('#res').hidden=true; return askQty(v,''); }   // código desconocido: pedir nombre
+  search(true); }
+function search(enter){ const raw=$('#code').value.trim(), q=norm(raw), box=$('#res');
+  if(q.length<2||/^\d{6,}$/.test(raw)){ box.hidden=true; return; }
+  const words=q.split(' '); const r=st.prods.filter(p=>words.every(w=>p.k.includes(w))).slice(0,25);
+  box.hidden=false;
+  box.innerHTML=r.map((p,i)=>`<button data-i="${i}">${esc(p.n)} <span class="mono note">${esc(p.c)}</span></button>`).join('')+`<button data-new="1" style="color:var(--accent)">＋ No está en la lista: pedir “${esc(raw)}”</button>`;
+  box.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{ const p=r[+b.dataset.i]; $('#code').value=''; box.hidden=true; askQty(p.c,p.n); });
+  box.querySelector('[data-new]').onclick=()=>{ $('#code').value=''; box.hidden=true; askQty('',raw.toUpperCase()); };
+  if(enter && r.length===1){ $('#code').value=''; box.hidden=true; askQty(r[0].c,r[0].n); } }
+function close(){ $('#ov').hidden=true; $('#sheet').innerHTML=''; paused=false; lastAt=Date.now(); }
+$('#ov').addEventListener('click',e=>{ if(e.target.id==='ov') close(); });
+
+/* ---------- HACER PEDIDO ---------- */
+function drawSedes(){ $('#sedes').innerHTML=SEDES.map(s=>`<button aria-pressed="${s===st.draft.sede}" data-s="${esc(s)}">${esc(s)}</button>`).join('');
+  $('#sedes').querySelectorAll('button').forEach(b=>b.onclick=()=>{ st.draft.sede=b.dataset.s; saveDraft(); drawSedes(); renderDraft(); }); }
+function askQty(code,name){ paused=true; $('#ov').hidden=false;
+  const ya=st.draft.items.find(x=>code?x.code===code:x.name===name);
+  $('#sheet').innerHTML=`${name?`<div class="pname">${esc(name)}</div>`:`<div class="pname">Producto nuevo</div><input id="nm" placeholder="Escriba el nombre del producto" autocomplete="off">`}
+    <div class="mono note">${esc(code||'sin código')}${ya?' · ya lleva '+ya.qty:''}</div>
+    <span class="lbl">¿Cuántas unidades necesita ${esc(st.draft.sede||'la sede')}?</span>
+    <input id="qq" class="qty" type="number" inputmode="decimal" min="0" placeholder="0">
+    <div class="btns"><button class="ghost" id="x">Cancelar</button><button class="primary" id="ok" style="flex:1">Agregar al pedido</button></div>`;
+  setTimeout(()=>($('#nm')||$('#qq'))?.focus(),60);
+  const go=()=>{ const q=num($('#qq').value); if(!(q>0)){ toast('Escriba la cantidad'); $('#qq').focus(); return; }
+    let n=name; if(!n){ n=$('#nm').value.trim().toUpperCase(); if(!n){ toast('Escriba el nombre'); $('#nm').focus(); return; } const names=LS.get('pb-names',{}); names[code]=n; LS.set('pb-names',names); st.byCode.set(code,n); st.prods.push({c:code,n,k:norm(n)}); }
+    if(ya) ya.qty=num(ya.qty)+q; else st.draft.items.unshift({code,name:n,qty:q});
+    saveDraft(); close(); renderDraft(); toast(`+${q} ${n}`); };
+  $('#ok').onclick=go; $('#qq').onkeydown=e=>{ if(e.key==='Enter') go(); }; if($('#nm')) $('#nm').onkeydown=e=>{ if(e.key==='Enter') $('#qq').focus(); }; $('#x').onclick=close; }
+function renderDraft(){ const d=st.draft, L=d.items;
+  $('#draft').innerHTML = L.length ? `<div class="panel"><div class="btns" style="justify-content:space-between"><span class="lbl">Pedido para ${esc(d.sede||'— elija la sede —')}</span><span class="note">${L.length} productos</span></div>
+      <div class="list">${L.map((x,i)=>`<div class="it" data-d="${i}"><div style="min-width:0"><div class="n">${esc(x.name)}</div><div class="c">${esc(x.code||'sin código')}</div></div>
+        <div style="display:flex;gap:6px;align-items:center"><input type="number" inputmode="decimal" value="${num(x.qty)}" data-dq style="width:80px;text-align:right;font:600 1.05rem var(--f-mono);padding:7px"><button class="ghost" data-ddel aria-label="Quitar">✕</button></div></div>`).join('')}</div>
+      <textarea id="nota" placeholder="Nota para bodega (opcional): urgente, va en el carro de la tarde…">${esc(d.nota||'')}</textarea>
+      <div class="btns"><button class="primary" id="sendBtn" style="flex:1">📤 Enviar a bodega</button><span id="clrW"><button class="ghost" id="clr">Borrar</button></span></div></div>`
+    : `<div class="empty"><b>Pedido vacío.</b> Elija la sede y escanee cada producto (o escriba el nombre). Ponga cuántas unidades necesita y toque <b>Enviar a bodega</b>: le aparece en su pantalla.</div>`;
+  if(!L.length) return;
+  $('#nota').oninput=()=>{ d.nota=$('#nota').value; saveDraft(); };
+  $('#sendBtn').onclick=sendOrder;
+  $('#clr').onclick=()=>{ $('#clrW').innerHTML='<button class="ghost" id="clrY" style="color:var(--new)">Sí, borrar el pedido</button>'; $('#clrY').onclick=()=>{ d.items=[]; d.nota=''; saveDraft(); renderDraft(); }; }; }
+$('#draft').addEventListener('change',e=>{ const r=e.target.closest('[data-d]'); if(r&&e.target.dataset.dq!=null){ st.draft.items[+r.dataset.d].qty=num(e.target.value); saveDraft(); } });
+$('#draft').addEventListener('click',e=>{ const r=e.target.closest('[data-d]'); if(r&&e.target.dataset.ddel!=null){ st.draft.items.splice(+r.dataset.d,1); saveDraft(); renderDraft(); } });
+function sendOrder(){ const d=st.draft;
+  if(!SRV.on){ toast('Primero conecte el servidor (arriba)'); $('#setup').scrollIntoView({behavior:'smooth'}); return; }
+  if(!d.sede){ toast('Elija para qué sede es el pedido'); return; } if(!me()){ toast('Escriba su nombre arriba'); $('#me').focus(); return; }
+  const items=d.items.filter(x=>num(x.qty)>0).map(x=>({code:x.code,name:x.name,qty:num(x.qty),alistado:null})); if(!items.length){ toast('El pedido no tiene cantidades'); return; }
+  const now=Date.now(), z=n=>String(n).padStart(2,'0'), t=new Date(now);
+  const numero=`P-${z(t.getDate())}${z(t.getMonth()+1)}-${z(t.getHours())}${z(t.getMinutes())}-${SEDES.indexOf(d.sede)+1}`;
+  const o={id:numero+'-'+Math.random().toString(36).slice(2,6), numero, sede:d.sede, items, nota:(d.nota||'').trim(), estado:'enviado', pidio:me(), creado:now, actualizado:now};
+  st.orders.unshift(o); LS.set('pb-orders',st.orders.slice(0,300)); send({accion:'crear',pedido:o});
+  st.draft={sede:d.sede,items:[],nota:''}; saveDraft(); renderDraft(); renderAllOrders(); toast(navigator.onLine===false?'Pedido guardado: se envía cuando haya internet':'Pedido enviado a bodega ✔'); }
+function update(o,patch,items){ Object.assign(o,patch); if(items) o.items=items; o.actualizado=Date.now(); LS.set('pb-orders',st.orders.slice(0,300)); send({accion:'actualizar',id:o.id,patch,items:items||undefined}); renderAllOrders(); }
+function renderMine(){ const L=st.orders.slice(0,40);
+  $('#mine').innerHTML = L.length ? `<div class="list">${L.map(o=>{ const falt=o.items.filter(x=>x.alistado!=null&&num(x.alistado)<num(x.qty)).length;
+      return `<div class="it" data-o="${esc(o.id)}" style="cursor:pointer"><div style="min-width:0"><div class="n">${esc(o.sede)} · <span class="mono">${esc(o.numero)}</span></div><div class="c">${fecha(o.creado)} · ${o.items.length} productos${o.pidio?' · '+esc(o.pidio):''}${falt?` · <span style="color:var(--wait)">${falt} incompletos</span>`:''}</div></div><span class="chip st-${o.estado}">${EST[o.estado]||o.estado}</span></div>`; }).join('')}</div>`
+    : '<div class="note">Todavía no hay pedidos.</div>';
+  $('#mine').querySelectorAll('[data-o]').forEach(el=>el.onclick=()=>showOrder(st.orders.find(o=>o.id===el.dataset.o))); }
+function showOrder(o){ if(!o) return; paused=true; $('#ov').hidden=false;
+  $('#sheet').innerHTML=`<div class="pname">${esc(o.sede)} · ${esc(o.numero)}</div><div class="note">${fecha(o.creado)}${o.pidio?' · pidió '+esc(o.pidio):''} · <span class="chip st-${o.estado}">${EST[o.estado]}</span>${o.alisto?' · alistó '+esc(o.alisto):''}</div>
+    ${o.nota?`<div class="note">📝 ${esc(o.nota)}</div>`:''}${o.notaBodega?`<div class="note">📦 Bodega: ${esc(o.notaBodega)}</div>`:''}
+    <div class="list">${o.items.map(x=>`<div class="it"><div style="min-width:0"><div class="n">${esc(x.name)}</div><div class="c">${esc(x.code||'sin código')}</div></div><div class="qtytag">${x.alistado==null?num(x.qty):`<span style="${num(x.alistado)<num(x.qty)?'color:var(--wait)':''}">${num(x.alistado)}</span> / ${num(x.qty)}`}</div></div>`).join('')}</div>
+    <div class="btns"><button id="x">Cerrar</button>${o.estado==='despachado'?'<button class="go" id="rec" style="flex:1">✔ Llegó a la sede</button>':''}${o.estado==='enviado'?'<span id="cW"><button class="ghost" id="cancel" style="color:var(--new)">Cancelar pedido</button></span>':''}</div>`;
+  $('#x').onclick=close;
+  if($('#rec')) $('#rec').onclick=()=>{ update(o,{estado:'recibido',recibio:me(),recibido:Date.now()}); close(); toast('Marcado como recibido'); };
+  if($('#cancel')) $('#cancel').onclick=()=>{ $('#cW').innerHTML='<button class="ghost" id="cY" style="color:var(--new)">Sí, cancelar</button>'; $('#cY').onclick=()=>{ st.orders=st.orders.filter(x=>x.id!==o.id); LS.set('pb-orders',st.orders); send({accion:'borrar',id:o.id}); close(); renderAllOrders(); toast('Pedido cancelado'); }; }; }
+$('#btnShareLink').onclick=async()=>{ const c=SRV.cfg; if(!SRV.on){ toast('Primero conecte el servidor'); return; }
+  const link=location.origin+location.pathname+'#s='+btoa(c.url)+'&k='+encodeURIComponent(c.clave);
+  if(navigator.share){ try{ await navigator.share({title:'Pedidos a Bodega',text:'Abra este link una vez para conectar la app de pedidos',url:link}); return; }catch(e){ if(e&&e.name==='AbortError') return; } }
+  try{ await navigator.clipboard.writeText(link); toast('Link copiado: envíelo a bodega'); }catch(e){ paused=true; $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="lbl">Copie este link y envíelo a bodega</div><textarea readonly id="lk">${esc(link)}</textarea><button id="x">Cerrar</button>`; $('#lk').select(); $('#x').onclick=close; } };
+
+/* ---------- BODEGA ---------- */
+$('#fPend').onclick=()=>{ st.filter='pend'; $('#fPend').setAttribute('aria-pressed',true); $('#fDone').setAttribute('aria-pressed',false); renderQueue(); };
+$('#fDone').onclick=()=>{ st.filter='done'; $('#fDone').setAttribute('aria-pressed',true); $('#fPend').setAttribute('aria-pressed',false); renderQueue(); };
+function ding(){ if(!st.sound) return; try{ ac=ac||new (window.AudioContext||window.webkitAudioContext)(); [0,.18].forEach((d,i)=>{ const o=ac.createOscillator(),g=ac.createGain(); o.frequency.value=i?1320:990; g.gain.value=.15; o.connect(g); g.connect(ac.destination); o.start(ac.currentTime+d); o.stop(ac.currentTime+d+.15); }); }catch(e){} try{navigator.vibrate&&navigator.vibrate([120,80,120]);}catch(e){} }
+$('#btnSound').onclick=()=>{ st.sound=!st.sound; $('#btnSound').textContent=st.sound?'🔔 Sonido activado':'🔔 Activar sonido'; if(st.sound) ding(); };
+const editable=o=>o.estado==='enviado'||o.estado==='alistando';
+function renderQueue(){
+  const sc=$('#scanner'); if(sc && $('#queue').contains(sc)) document.body.appendChild(sc);   // no destruir el escáner al redibujar
+  const pend=st.orders.filter(o=>editable(o)).sort((a,b)=>a.creado-b.creado);
+  const done=st.orders.filter(o=>!editable(o)).slice(0,40);
+  const L=st.filter==='pend'?pend:done;
+  if(st.open && !L.some(o=>o.id===st.open)) st.open=null;
+  if(!L.length){ $('#queue').innerHTML=`<div class="empty">${st.filter==='pend'?'<b>No hay pedidos por alistar.</b> Cuando una sede envíe un pedido, aparece aquí (revisa cada pocos segundos). Toque <b>Activar sonido</b> para que le avise.':'Aún no hay pedidos despachados.'}</div>`; mountScanner(); return; }
+  $('#queue').innerHTML=L.map(o=>{ const open=st.open===o.id; const tot=o.items.length, listo=o.items.filter(x=>x.alistado!=null).length; const ed=editable(o);
+    return `<div class="order ${o.estado}" data-o="${esc(o.id)}">
+      <div class="ohead" data-toggle><div style="min-width:0"><div class="t">${esc(o.sede)}</div><div class="note">${fecha(o.creado)} · ${tot} productos${o.pidio?' · pidió '+esc(o.pidio):''}${o.estado==='alistando'?` · ${listo}/${tot} alistados`:''}</div>${o.nota?`<div class="note">📝 ${esc(o.nota)}</div>`:''}</div><span class="chip st-${o.estado}">${EST[o.estado]}</span></div>
+      ${open?`<div class="obody">${ed?'<div data-scanslot></div>':''}${o.items.map((x,i)=>{ const dn=x.alistado!=null; return `<div class="pick ${dn?'done':''} ${st.flash===o.id+'|'+i?'flash':''}" data-i="${i}">
+          <input type="checkbox" class="ck" data-ck ${dn?'checked':''} ${ed?'':'disabled'} aria-label="Alistado">
+          <div style="min-width:0"><div class="pn" style="font-weight:600">${esc(x.name)}</div><div class="mono note">${esc(x.code||'sin código')} · pidieron <b>${num(x.qty)}</b></div></div>
+          <input type="number" inputmode="decimal" data-al value="${dn?num(x.alistado):(st.typed[o.id+'|'+i]??num(x.qty))}" ${ed?'':'disabled'} aria-label="Cantidad alistada"></div>`; }).join('')}
+        ${ed?`<textarea data-nb placeholder="Nota de bodega (opcional): no hay, se manda mañana…">${esc(o.notaBodega||'')}</textarea>
+        <div class="note">Escanee o marque ✓ cada producto al alistarlo. Si no hay completo, cambie la cantidad (0 = no hay).</div>
+        <div class="btns"><button class="go" data-desp style="flex:1" ${listo<tot?'disabled':''}>🚚 Marcar despachado (${listo}/${tot})</button></div>`
+        :`<div class="note">${o.estado==='recibido'?'La sede confirmó que le llegó.':'Despachado'}${o.alisto?' · alistó '+esc(o.alisto):''}${o.despachado?' · '+fecha(o.despachado):''}</div>`}</div>`:''}
+    </div>`; }).join('');
+  mountScanner();
+}
+$('#queue').addEventListener('click',e=>{
+  const card=e.target.closest('[data-o]'); if(!card) return; const o=st.orders.find(x=>x.id===card.dataset.o); if(!o) return;
+  if(e.target.closest('[data-toggle]')){ st.open = st.open===o.id?null:o.id; LS.set('pb-open',st.open); renderQueue(); return; }
+  if(e.target.dataset.ck!=null){ const row=e.target.closest('[data-i]'); markPicked(o,+row.dataset.i, e.target.checked?num(row.querySelector('[data-al]').value):null); return; }
+  if(e.target.dataset.desp!=null){ if(!me()){ toast('Escriba su nombre arriba'); $('#me').focus(); return; }
+    const nb=card.querySelector('[data-nb]')?.value.trim()||''; update(o,{estado:'despachado',despachado:Date.now(),alisto:me(),notaBodega:nb}); st.open=null; LS.set('pb-open',null); renderQueue(); toast(`Pedido de ${o.sede} despachado 🚚`); }
+});
+$('#queue').addEventListener('input',e=>{ if(e.target.dataset.al==null) return; const card=e.target.closest('[data-o]'); st.typed[card.dataset.o+'|'+e.target.closest('[data-i]').dataset.i]=e.target.value; });
+$('#queue').addEventListener('change',e=>{ const card=e.target.closest('[data-o]'); if(!card) return; const o=st.orders.find(x=>x.id===card.dataset.o); if(!o) return;
+  if(e.target.dataset.nb!=null){ update(o,{notaBodega:e.target.value.trim()}); return; }
+  if(e.target.dataset.al!=null){ const i=+e.target.closest('[data-i]').dataset.i; if(o.items[i].alistado!=null) markPicked(o,i,num(e.target.value)); } });
+function markPicked(o,i,val){ const items=o.items.map(x=>({...x})); items[i].alistado=val; const patch={}; if(o.estado==='enviado'){ patch.estado='alistando'; patch.alisto=me()||''; } update(o,patch,items); }
+function pickScan(v){ const o=st.orders.find(x=>x.id===st.open); $('#code').value=''; if(!o||!editable(o)){ toast('Abra primero el pedido que va a alistar'); return; }
+  const vs=[v,v.replace(/^0+/,'')]; if(/^\d{12}$/.test(v)) vs.push('0'+v);
+  let i=o.items.findIndex(x=>x.code&&vs.includes(String(x.code)));
+  if(i<0){ const f=find(v); if(f) i=o.items.findIndex(x=>norm(x.name)===norm(f.name)); }
+  if(i<0){ tone(false); toast('Ese producto no está en este pedido'); return; }
+  tone(true); const x=o.items[i]; paused=true; $('#ov').hidden=false;
+  $('#sheet').innerHTML=`<div class="pname">${esc(x.name)}</div><div class="mono note">${esc(x.code)} · pidieron <b>${num(x.qty)}</b>${x.alistado!=null?' · ya alistado: '+num(x.alistado):''}</div>
+    <span class="lbl">¿Cuántas unidades alistó?</span><input id="qa" class="qty" type="number" inputmode="decimal" value="${num(x.qty)}">
+    <div class="btns"><button class="ghost" id="x">Cancelar</button><button class="go" id="ok" style="flex:1">✓ Alistado</button></div>`;
+  setTimeout(()=>{ const q=$('#qa'); if(q){ q.focus(); q.select(); } },60);
+  const go=()=>{ st.flash=o.id+'|'+i; markPicked(o,i,num($('#qa').value)); close(); setTimeout(()=>{ st.flash=null; },900); toast('✓ '+x.name); };
+  $('#ok').onclick=go; $('#qa').onkeydown=e=>{ if(e.key==='Enter') go(); }; $('#x').onclick=close; }
+
+function renderAllOrders(){ const n=st.orders.filter(o=>o.estado==='enviado').length; $('#badge').hidden=!n; $('#badge').textContent=n; renderMine(); if(st.role==='bodega') renderQueue(); }
+
+/* ---------- conexión ---------- */
+function drawSetup(){ $('#setup').hidden=SRV.on; const c=SRV.cfg; $('#srvUrl').value=c.url||''; $('#srvKey').value=c.clave||''; }
+$('#srvSave').onclick=async()=>{ const url=$('#srvUrl').value.trim(), clave=$('#srvKey').value.trim();
+  if(!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)||!clave){ $('#srvMsg').textContent='Pegue la URL que termina en /exec y escriba la clave.'; return; }
+  LS.set('pb-srv',{url,clave}); $('#srvMsg').textContent='Probando…';
+  try{ const r=await apiGet('ping'); if(r.ok){ $('#srvMsg').textContent=''; drawSetup(); toast('Conectado ✔'); poll(true); } else { $('#srvMsg').textContent=r.error==='clave'?'La clave no coincide con la del servidor.':'El servidor respondió con error.'; LS.set('pb-srv',{}); } }
+  catch(e){ $('#srvMsg').textContent='No se pudo conectar. Revise la URL y que la implementación diga “Cualquier persona”.'; LS.set('pb-srv',{}); } };
+
+drawSetup(); drawSedes(); renderDraft(); setRole(st.role); showPending(); status(SRV.on?'Conectando…':'Sin conectar');
+loadProducts(); poll(true);
+if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){ try{ navigator.serviceWorker.register('../sw.js',{scope:'../'}); }catch(e){} }
+})();
+</script>
+</body></html>
