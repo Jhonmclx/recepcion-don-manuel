@@ -64,12 +64,16 @@ label.btn{display:inline-flex;align-items:center;gap:6px;position:relative}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .note{font-size:.82rem;color:var(--muted)}
 pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);padding:10px;border-radius:8px;margin:0}
+.fab{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);width:52px;height:52px;border-radius:50%;padding:0;font:800 1.5rem var(--f-ui);background:var(--ink);color:var(--bg);border:0;box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:15}
+.rq{width:72px;padding:6px 8px;font:600 1.05rem var(--f-mono);text-align:right}
+.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+.ok-chip{background:color-mix(in srgb,var(--ok) 18%,transparent)!important;color:var(--ok)!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 </head><body>
 <div class="wrap">
-  <header><div><h1>Recepción de mercancía</h1><div class="sub">Mercados Don Manuel</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><button id="btnShare" style="padding:8px 12px;font-size:.9rem">📤 Compartir app</button><div class="sub" id="status">Cargando productos…</div></div></header>
+  <header><div><h1>Facturas de proveedores</h1><div class="sub">Mercados Don Manuel</div></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><button id="btnShare" style="padding:8px 12px;font-size:.9rem">📤 Compartir app</button><div class="sub" id="status">Cargando productos…</div></div></header>
   <nav><button data-tab="recibir" aria-selected="true">Recibir</button><button data-tab="fact" aria-selected="false">Factura</button><button data-tab="hist" aria-selected="false">Historial</button></nav>
 
   <section id="v-recibir" style="display:flex;flex-direction:column;gap:12px">
@@ -112,17 +116,18 @@ pre.txt{white-space:pre-wrap;font:.85rem var(--f-mono);background:var(--sunk);pa
 
   <section id="v-hist" hidden style="display:flex;flex-direction:column;gap:12px"><div class="btns"><button class="primary" id="hTabF">Facturas</button><button id="hTabR">Recepciones</button></div><div id="histF"></div><div id="hist" hidden></div></section>
 
-  <div class="panel" id="srvPanel" hidden>
-    <b>Servidor del almacén (Hoja de Google)</b>
+  <details class="panel" id="srvPanel" hidden>
+    <summary class="note" style="cursor:pointer">⚙ Configuración avanzada (no es necesaria)</summary>
     <input id="srvUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
     <input id="srvKey" placeholder="Clave" autocomplete="off">
     <div class="btns"><button id="srvSave">Guardar y probar</button><button id="srvLink">Copiar link para otros celulares</button></div>
     <div class="note" id="srvMsg"></div>
-  </div>
+  </details>
 </div>
 
 <div class="overlay" id="ov" hidden><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast" hidden></div>
+<button class="fab" id="btnHelp" aria-label="Ayuda">?</button>
 
 <script>window.START_TAB="fact";</script>
 <script>
@@ -139,7 +144,8 @@ const isDesk=()=>matchMedia('(pointer:fine)').matches;
 
 /* ---------- state ---------- */
 const st={names:new Map(), codes:new Map(), all:[], draft:LS.get('rdm2-draft',null)||{proveedor:'',factura:'',lines:[]}, recs:[], mode:'local', db:null};
-const saveDraft=()=>LS.set('rdm2-draft',st.draft);
+let asT; // every change is kept on the phone at once; an open invoice is also re-saved to Historial
+const saveDraft=()=>{ LS.set('rdm2-draft',st.draft); if((st.draft.fact||[]).length){ clearTimeout(asT); asT=setTimeout(async()=>{ if(await saveFact()){ const s=document.getElementById('fSaved'); if(s) s.textContent='✔ Guardada en Historial → Facturas. Los cambios se guardan solos.'; } },700); } };
 if(!st.draft.recibio) st.draft.recibio=LS.get('rdm2-recibio','');
 for(const f of ['proveedor','factura','recibio']){ const el=$('#h-'+f); el.value=st.draft[f]||''; el.oninput=()=>{st.draft[f]=el.value;saveDraft(); if(f==='recibio') LS.set('rdm2-recibio',el.value.trim());}; }
 function fillRecibioList(){ const names=[...new Set([...(LS.get('rdm2-names',[])),LS.get('rdm2-recibio','')].filter(Boolean))]; $('#recibioList').innerHTML=names.map(n=>`<option value="${esc(n)}">`).join(''); }
@@ -210,9 +216,11 @@ function onCode(raw){
   paused=true;
   const f=findName(code); beep(!!f);
   const ya=st.draft.lines.find(l=>l.barras===(f?f.code:code));
+  const g=f?groupFor(f.code,f.name):null;
+  const pend=g?Math.max(0,g.qty-(compare(st.draft.lines,st.draft.fact).rows.find(r=>r.g.key===g.key)?.rec||0)):0;
   $('#sheet').innerHTML = f
-    ? `<div class="pname">${esc(f.name)}</div><div class="pcode">${esc(code)}${ya?' · ya lleva <b>'+ya.cant+'</b>':''}${(()=>{const g=groupFor(f.code,f.name);return g?' · <b>factura: '+g.qty+'</b>':(st.draft.fact&&st.draft.fact.length?' · <span class="chip">no está en la factura</span>':'');})()}</div>
-       <div class="lbl">¿Cuántos llegaron?</div><input id="q" class="qty" type="number" inputmode="numeric" min="0" placeholder="0">
+    ? `<div class="pname">${esc(f.name)}</div><div class="pcode">${esc(code)}${ya?' · ya lleva <b>'+ya.cant+'</b>':''}${g?' · <b>factura: '+g.qty+'</b>':(st.draft.fact&&st.draft.fact.length?' · <span class="chip">no está en la factura</span>':'')}</div>
+       <div class="lbl">¿Cuántos llegaron?${pend?' <span style="text-transform:none;letter-spacing:0">(faltan '+pend+' según la factura — si llegaron todos, solo toque Agregar)</span>':''}</div><input id="q" class="qty" type="number" inputmode="numeric" min="0" placeholder="0" value="${pend||''}">
        <div class="btns"><button class="ghost" id="x">Cancelar</button><button class="primary" id="ok" style="flex:1">Agregar</button></div>`
     : `<div class="pname">Producto nuevo</div><div class="pcode">${esc(code)} · no está en la lista</div>
        <div class="lbl">Nombre del producto</div><input id="nm" autocomplete="off" placeholder="Escriba el nombre"><div class="sug" id="sug" hidden></div>
@@ -220,7 +228,7 @@ function onCode(raw){
        <div class="note">Queda guardado: la próxima vez sale el nombre solo.</div>
        <div class="btns"><button class="ghost" id="x">Cancelar</button><button class="primary" id="ok" style="flex:1">Agregar</button></div>`;
   $('#ov').hidden=false;
-  setTimeout(()=>($('#nm')||$('#q'))?.focus(),60);
+  setTimeout(()=>{ const el=$('#nm')||$('#q'); if(el){ el.focus(); try{ el.select(); }catch(e){} } },60);
   if(!f){ $('#nm').oninput=()=>{ const q=$('#nm').value.toLowerCase().trim(), box=$('#sug'); if(q.length<3){box.hidden=true;return;}
     const r=st.all.filter(p=>p.name.toLowerCase().includes(q)).slice(0,5); box.hidden=!r.length;
     box.innerHTML=r.map((p,i)=>`<button data-i="${i}">${esc(p.name)}</button>`).join('');
@@ -348,15 +356,30 @@ function sim(a,b){ const A=ntok(a),B=ntok(b); if(!A.length||!B.length) return 0;
   for(const x of A){ const k=B.findIndex((y,i)=>!used.has(i)&&(x===y||(x.length>=4&&y.length>=4&&lev1(x,y)))); if(k>=0){used.add(k);m++;} }
   if(m<2 || m/Math.max(A.length,B.length)<0.5) return 0; return m/Math.min(A.length,B.length); }
 function groups(fact){ const m=new Map(); for(const x of fact||[]){ const key=x.code||ntok(x.desc).join(' '); const g=m.get(key)||{key,code:x.code,desc:x.desc,qty:0,price:x.price}; g.qty+=num(x.qty); m.set(key,g); } return [...m.values()]; }
-function matchScore(g,barras,name,alias){ if(g.code && (g.code===barras)) return 2; if(alias[g.key] && alias[g.key]===barras) return 2; return sim(g.desc,name); }
+function matchScore(g,barras,name,alias){ if(barras==='F:'+g.key) return 3; if(g.code && (g.code===barras)) return 2; if(alias[g.key] && alias[g.key]===barras) return 2; return sim(g.desc,name); }
+function bestGroup(l,G,alias){ let best=null,bs=0; for(const g of G){ const sc=matchScore(g,l.barras,l.descripcion,alias); if(sc>bs){bs=sc;best=g;} } return bs>=0.6?best:null; }
 function compare(lines,fact){
   const G=groups(fact), alias=ALIAS.get(), rec=new Map(G.map(g=>[g.key,0])), extra=[];
-  for(const l of lines){ let best=null,bs=0; for(const g of G){ const sc=matchScore(g,l.barras,l.descripcion,alias); if(sc>bs){bs=sc;best=g;} }
-    if(best && bs>=0.6) rec.set(best.key, rec.get(best.key)+num(l.cant)); else extra.push(l); }
+  for(const l of lines){ const best=bestGroup(l,G,alias);
+    if(best) rec.set(best.key, rec.get(best.key)+num(l.cant)); else extra.push(l); }
   const rows=G.map(g=>({g,rec:rec.get(g.key)}));
   return {rows, extra, ok:rows.filter(r=>r.rec===r.g.qty).length, falt:rows.filter(r=>r.rec<r.g.qty).length};
 }
-function groupFor(barras,name){ const G=groups(st.draft.fact), alias=ALIAS.get(); let best=null,bs=0; for(const g of G){ const sc=matchScore(g,barras,name,alias); if(sc>bs){bs=sc;best=g;} } return bs>=0.6?best:null; }
+function groupFor(barras,name){ return bestGroup({barras,descripcion:name},groups(st.draft.fact),ALIAS.get()); }
+/* set how many arrived of one invoice product (typed in the comparison, or "llegó todo") */
+function setRecv(g,value){
+  const L=st.draft.lines, G=groups(st.draft.fact), alias=ALIAS.get();
+  const mine=L.filter(l=>bestGroup(l,G,alias)?.key===g.key);
+  let diff=Math.max(0,num(value))-mine.reduce((s,l)=>s+num(l.cant),0);
+  if(diff>0){
+    if(mine.length) mine[0].cant=num(mine[0].cant)+diff;
+    else { const real=alias[g.key] || (g.code && findName(g.code)?.code) || ''; L.push({barras:real||('F:'+g.key), descripcion:g.desc, cant:diff, fromFact:true}); }
+  } else if(diff<0){
+    for(const l of [...mine].reverse()){ if(!diff) break; const take=Math.min(num(l.cant),-diff); l.cant=num(l.cant)-take; diff+=take; }
+    st.draft.lines=L.filter(l=>num(l.cant)>0 || !mine.includes(l));
+  }
+  saveDraft();
+}
 
 /* ---------- invoice photos (many pages) → OCR ---------- */
 let fPages=[];   // {blob, rot, thumb}
@@ -405,18 +428,24 @@ $('#fRead').onclick=async()=>{
     for(const p of fPages){
       page++;
       const img=await fileToImg(p.blob);
-      const {data}=await worker.recognize(canvasFrom(img,2400,p.rot,true));
+      let {data}=await worker.recognize(canvasFrom(img,2400,p.rot,true));
+      let found=parseInvoiceText(data.text);
+      if(!found.length){ // page probably sideways or upside down: try the other directions
+        for(const d of [90,270,180]){ const r=(p.rot+d)%360;
+          $('#fProg').textContent=`Página ${page} de ${n}: girándola para leer mejor…`;
+          const t=(await worker.recognize(canvasFrom(img,2400,r,true))).data; const f2=parseInvoiceText(t.text);
+          if(f2.length){ const old=p.rot; data=t; found=f2; p.rot=r; fPages.forEach(q=>{ if(!done.includes(q)&&q!==p&&q.rot===old) q.rot=r; }); drawPages(); break; } } }
       allText+='\n'+data.text;
-      const found=parseInvoiceText(data.text);
       st.draft.fact=[...(st.draft.fact||[]),...found]; total+=found.length; saveDraft();
       const ph=await toBlob(canvasFrom(img,1600,p.rot,false),0.72); if(ph){ photos.push(ph); await IDB.set('draft',photos); }
       done.push(p); renderFact(); render();
     }
     fPages=fPages.filter(p=>!done.includes(p)); drawPages();
     if(!st.draft.factura){ const m=allText.match(/N[oº°]\.?\s*:?\s*([A-Z]{2,5}-?\d{4,})/i)||allText.match(/\b([A-Z]{3,5}-?\d{5,})\b/); if(m){ st.draft.factura=m[1]; $('#h-factura').value=m[1]; saveDraft(); } }
-    $('#fProg').textContent= total ? `✔ ${n} página${n===1?'':'s'} leída${n===1?'':'s'}: ${total} productos. Revíselos abajo, corrija lo que esté mal y toque Guardar factura.` : 'No se encontraron productos. Revise que las páginas estén derechas, cerca y con buena luz, o agréguelos a mano abajo.';
+    if(total) await saveFact();
+    $('#fProg').textContent= total ? `✔ ${n} página${n===1?'':'s'} leída${n===1?'':'s'}: ${total} productos. Ya quedó guardada en Historial. Revise abajo y corrija lo que esté mal (los cambios se guardan solos).` : 'No se encontraron productos. Tome la foto más cerca, con buena luz y sin sombras, o agréguelos a mano abajo.';
     beep(!!total);
-  }catch(e){ $('#fProg').textContent=`Se leyeron ${page>0?page-1:0} de ${n} páginas. Revise la conexión a internet (la primera vez descarga el lector) y toque Leer otra vez para las que faltan.`; fPages=fPages.slice(Math.max(0,page-1)); drawPages(); }
+  }catch(e){ if((st.draft.fact||[]).length) saveFact(); $('#fProg').textContent=`Se leyeron ${page>0?page-1:0} de ${n} páginas. Revise la conexión a internet (la primera vez descarga el lector) y toque Leer otra vez para las que faltan.`; fPages=fPages.slice(Math.max(0,page-1)); drawPages(); }
   finally{ btn.disabled=false; try{ worker && await worker.terminate(); }catch(e){} }
 };
 
@@ -429,10 +458,10 @@ function renderFact(){
         <td><input data-k="qty" type="number" inputmode="decimal" value="${esc(x.qty)}" style="width:64px;padding:6px;text-align:right;font-family:var(--f-mono)"></td>
         <td><input data-k="price" type="number" inputmode="decimal" value="${esc(x.price)}" style="width:96px;padding:6px;text-align:right;font-family:var(--f-mono)"></td>
         <td><button class="ghost" data-fdel aria-label="Quitar">✕</button></td></tr>`).join('')}</table></div>`:'<div class="note">Tome la foto de la factura arriba, o agregue los productos a mano.</div>'}
-    <div class="btns">${F.length?`<button class="primary" id="fSave">${st.draft.factId?'Guardar cambios de la factura':'Guardar factura'}</button>`:''}<button id="fAdd">+ Agregar línea</button>${F.length?'<span id="fClrW"><button class="ghost" id="fClr">Borrar factura</button></span>':''}</div></div>`;
+    ${F.length?`<div class="note" id="fSaved">${st.draft.factId?'✔ Guardada en Historial → Facturas. Los cambios se guardan solos.':''}</div>`:''}
+    <div class="btns"><button id="fAdd">+ Agregar línea</button>${F.length?'<span id="fClrW"><button class="ghost" id="fClr">Cerrar factura</button></span>':''}</div></div>`;
   $('#fAdd').onclick=()=>{ st.draft.fact=[...F,{code:'',desc:'',qty:1,price:0}]; saveDraft(); renderFact(); const ins=$('#fTable').querySelectorAll('input[data-k=desc]'); ins[ins.length-1]?.focus(); };
-  if(F.length) $('#fClr').onclick=()=>{ $('#fClrW').innerHTML='<button class="ghost" id="fClrY" style="color:var(--warn)">Sí, borrar la factura</button>'; $('#fClrY').onclick=()=>{ st.draft.fact=[]; st.draft.factId=null; IDB.del('draft'); saveDraft(); renderFact(); render(); }; };
-  if(F.length) $('#fSave').onclick=async()=>{ const id=await saveFact(); if(id){ toast('Factura guardada ✔ (Historial → Facturas)'); renderFact(); } };
+  if(F.length) $('#fClr').onclick=()=>{ $('#fClrW').innerHTML='<button class="ghost" id="fClrY" style="color:var(--warn)">Sí, cerrarla (queda en Historial)</button>'; $('#fClrY').onclick=async()=>{ await saveFact(); st.draft.fact=[]; st.draft.factId=null; IDB.del('draft'); saveDraft(); renderFact(); render(); toast('Factura cerrada. Está en Historial → Facturas'); }; };
   renderCmp();
 }
 $('#fTable').addEventListener('change',e=>{ const tr=e.target.closest('tr[data-f]'); if(!tr) return; const x=st.draft.fact[+tr.dataset.f], k=e.target.dataset.k; if(!k) return;
@@ -443,13 +472,34 @@ function renderCmp(){
   const c=compare(st.draft.lines,F);
   const chip=(r)=> r.rec===r.g.qty?'<span class="chip" style="background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)">Completo</span>'
     : r.rec===0?'<span class="chip">No ha llegado</span>' : r.rec<r.g.qty?`<span class="chip">Faltan ${r.g.qty-r.rec}</span>`:`<span class="chip">Sobran ${r.rec-r.g.qty}</span>`;
+  const all=c.ok===c.rows.length && !c.extra.length;
   $('#fCmp').innerHTML=`<div class="panel"><b>Factura vs. lo que llegó</b>
-    <div class="note">${c.ok} de ${c.rows.length} productos completos. Escanee en <b>Recibir</b> y esta lista se va actualizando.</div>
-    <div class="list">${c.rows.map((r,i)=>`<div class="it" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><div class="n">${esc(r.g.desc)}</div><div class="c">${esc(r.g.code||'')} · factura ${r.g.qty} · llegó ${r.rec}</div>
-        ${r.rec===0&&c.extra.length?`<select data-link="${i}" style="margin-top:6px;max-width:100%;font-size:.85rem;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)"><option value="">¿Es uno de los escaneados? Elíjalo…</option>${c.extra.map(l=>`<option value="${esc(l.barras)}">${esc(l.descripcion)} (${num(l.cant)})</option>`).join('')}</select>`:''}</div><div>${chip(r)}</div></div>`).join('')}
+    <div class="note">${all?'<b style="color:var(--ok)">✔ Todo llegó completo.</b>':`${c.ok} de ${c.rows.length} productos completos.`} Escanee los productos, o escriba aquí cuántos llegaron de cada uno.</div>
+    <div class="btns">${all?'':'<span id="allW"><button class="primary" id="fAll">✓ Llegó todo completo</button></span>'}<button class="scanbtn" id="fScan">📷 Ir a escanear</button><button id="fXls">⬇ Descargar Excel</button></div>
+    <div class="list">${c.rows.map((r,i)=>`<div class="it" style="grid-template-columns:minmax(0,1fr) auto"><div style="min-width:0"><div class="n">${esc(r.g.desc)}</div><div class="c">${esc(r.g.code||'')} · factura <b>${r.g.qty}</b> · ${chip(r)}</div>
+        ${r.rec===0&&c.extra.length?`<select data-link="${i}" style="margin-top:6px;max-width:100%;font-size:.85rem;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)"><option value="">¿Es uno de los escaneados? Elíjalo…</option>${c.extra.map(l=>`<option value="${esc(l.barras)}">${esc(l.descripcion)} (${num(l.cant)})</option>`).join('')}</select>`:''}</div>
+        <label style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span class="lbl" style="font-size:.62rem">Llegó</span><input class="rq" data-rq="${i}" type="number" inputmode="numeric" min="0" value="${r.rec}" aria-label="Llegó de ${esc(r.g.desc)}"></label></div>`).join('')}
       ${c.extra.map(l=>`<div class="it" style="grid-template-columns:minmax(0,1fr) auto"><div><div class="n">${esc(l.descripcion)}</div><div class="c">${esc(l.barras)} · llegó ${num(l.cant)}</div></div><span class="chip">No está en la factura</span></div>`).join('')}</div>
     </div>`;
-  $('#fCmp').querySelectorAll('select[data-link]').forEach(sel=>sel.onchange=()=>{ if(!sel.value) return; ALIAS.set(c.rows[+sel.dataset.link].g.key, sel.value); renderCmp(); render(); toast('Vinculado: la próxima vez se reconoce solo'); });
+  $('#fCmp').querySelectorAll('select[data-link]').forEach(sel=>sel.onchange=()=>{ if(!sel.value) return; ALIAS.set(c.rows[+sel.dataset.link].g.key, sel.value); saveDraft(); renderCmp(); render(); toast('Vinculado: la próxima vez se reconoce solo'); });
+  $('#fCmp').querySelectorAll('input[data-rq]').forEach(inp=>{ inp.onfocus=()=>inp.select(); inp.onchange=()=>{ setRecv(c.rows[+inp.dataset.rq].g, inp.value); renderCmp(); render(); };
+    inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); const nx=$('#fCmp').querySelector(`input[data-rq="${+inp.dataset.rq+1}"]`); nx?nx.focus():inp.blur(); } }; });
+  if(!all) $('#fAll').onclick=()=>{ const falt=c.rows.filter(r=>r.rec<r.g.qty).length;
+    $('#allW').innerHTML=`<button class="primary" id="fAllY">Sí, marcar ${falt} producto${falt===1?'':'s'} como llegado${falt===1?'':'s'}</button>`;
+    $('#fAllY').onclick=()=>{ c.rows.forEach(r=>{ if(r.rec<r.g.qty) setRecv(r.g,r.g.qty); }); renderCmp(); render(); beep(true); toast('✔ Todo marcado como llegado. Corrija solo lo que faltó.'); }; };
+  $('#fScan').onclick=()=>{ document.querySelector('nav button[data-tab=recibir]').click(); $('#btnCam').click(); };
+  $('#fXls').onclick=()=>downloadCmp({proveedor:st.draft.proveedor, factura:st.draft.factura, fecha:today(), recibio:st.draft.recibio}, F, st.draft.lines);
+}
+function downloadCmp(h,fact,lines){
+  const c=compare(lines||[],fact), q=v=>{ const s=String(v??''); return /[;"\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const rows=[['Mercados Don Manuel - Factura vs. recibido'],['Proveedor',h.proveedor||''],['Factura',h.factura||''],['Fecha',h.fecha||''],['Recibió',h.recibio||''],[],
+    ['Código','Producto','Facturado','Llegó','Diferencia','Estado','Precio U.','Total factura'],
+    ...c.rows.map(r=>[r.g.code||'',r.g.desc,r.g.qty,r.rec,r.rec-r.g.qty,r.rec===r.g.qty?'Completo':r.rec<r.g.qty?'Faltan '+(r.g.qty-r.rec):'Sobran '+(r.rec-r.g.qty),Math.round(num(r.g.price)),Math.round(num(r.g.price)*r.g.qty)]),
+    ...c.extra.map(l=>[String(l.barras).startsWith('F:')?'':l.barras,l.descripcion,0,num(l.cant),num(l.cant),'No está en la factura','',''])];
+  const csv='﻿'+rows.map(r=>r.map(q).join(';')).join('\r\n');
+  const name=`Factura ${(h.proveedor||'proveedor').replace(/[^\w áéíóúñÁÉÍÓÚÑ-]/g,'')} ${(h.factura||'').replace(/[^\w-]/g,'')} ${h.fecha||''}`.replace(/\s+/g,' ').trim()+'.csv';
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+  toast('Descargando: ábralo con Excel');
 }
 
 /* ---------- list ---------- */
@@ -459,7 +509,7 @@ function render(flash){
   $('#sum').innerHTML=`<div><span>Productos</span> <b>${L.length}</b></div><div><span>Unidades</span> <b>${und}</b></div>`+
     (cmp?`<button class="ghost" id="goFact" style="margin-left:auto">Factura: ${cmp.ok}/${cmp.rows.length} completos${cmp.falt?' · <span class="chip">'+cmp.falt+' con faltante</span>':''} →</button>`:'');
   if(cmp) $('#goFact').onclick=()=>document.querySelector('nav button[data-tab=fact]').click();
-  $('#items').innerHTML = L.length ? `<div class="list">${L.map((l,i)=>`<div class="it" data-i="${i}"><div style="min-width:0"><div class="n">${esc(l.descripcion)}</div><div class="c">${esc(l.barras)}</div></div>
+  $('#items').innerHTML = L.length ? `<div class="list">${L.map((l,i)=>`<div class="it" data-i="${i}"><div style="min-width:0"><div class="n">${esc(l.descripcion)}</div><div class="c">${String(l.barras).startsWith('F:')?'según factura (sin escanear)':esc(l.barras)}</div></div>
       <input type="number" inputmode="numeric" value="${esc(l.cant)}" aria-label="Cantidad"><button class="ghost" data-del aria-label="Quitar">✕</button></div>`).join('')}</div>`
     : `<div class="empty"><b>Aún no hay productos.</b><br>Escanee un código: sale el nombre y usted escribe cuántos llegaron.</div>`;
   $('#acts').innerHTML = L.length ? `<button class="primary" id="save">Guardar recepción</button><span id="clrW"><button class="ghost" id="clr">Borrar todo</button></span>` : '';
@@ -472,7 +522,7 @@ $('#items').addEventListener('click',e=>{ const r=e.target.closest('.it'); if(r&
 function textOf(r){ const und=r.lines.reduce((s,l)=>s+num(l.cant),0);
   const c=(r.fact&&r.fact.length)?compare(r.lines,r.fact):null;
   const extra=c?['','COMPARACIÓN CON LA FACTURA:',...c.rows.filter(x=>x.rec!==x.g.qty).map(x=>`- ${x.g.desc}: facturado ${x.g.qty}, llegó ${x.rec} → ${x.rec<x.g.qty?'FALTAN '+(x.g.qty-x.rec):'sobran '+(x.rec-x.g.qty)}`),...c.extra.map(l=>`- ${l.descripcion}: llegó ${num(l.cant)}, NO está en la factura`),c.rows.every(x=>x.rec===x.g.qty)&&!c.extra.length?'Todo llegó completo ✔':'']:[];
-  return [`RECEPCIÓN${r.numero?' '+r.numero:''} — Mercados Don Manuel`,`Proveedor: ${r.proveedor||'—'} | Factura: ${r.factura||'—'}${r.fecha?' | '+r.fecha:''}`,`Recibió: ${r.recibio||'—'}`,'',...r.lines.map(l=>`${num(l.cant)}  ${l.descripcion}  (${l.barras})`),'',`Productos: ${r.lines.length} | Unidades: ${und}`,...extra].join('\n'); }
+  return [`RECEPCIÓN${r.numero?' '+r.numero:''} — Mercados Don Manuel`,`Proveedor: ${r.proveedor||'—'} | Factura: ${r.factura||'—'}${r.fecha?' | '+r.fecha:''}`,`Recibió: ${r.recibio||'—'}`,'',...r.lines.map(l=>`${num(l.cant)}  ${l.descripcion}  (${String(l.barras).startsWith('F:')?'sin escanear':l.barras})`),'',`Productos: ${r.lines.length} | Unidades: ${und}`,...extra].join('\n'); }
 async function copyText(t){ try{ await navigator.clipboard.writeText(t); toast('Copiado'); }catch(e){ $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="lbl">Seleccione y copie</div><pre class="txt">${esc(t)}</pre><button id="x">Cerrar</button>`; $('#x').onclick=close; } }
 async function saveRec(){
   const d=st.draft; if(!d.proveedor){ toast('Escriba el proveedor'); $('#h-proveedor').focus(); return; }
@@ -496,15 +546,17 @@ const IDB={p:null, open(){ return this.p ||= new Promise((res,rej)=>{ const r=in
 const FACTS={get(){ return LS.get('rdm2-facts',[]); }, set(v){ LS.set('rdm2-facts',v); }};
 async function saveFact(recNum){
   const d=st.draft; if(!(d.fact||[]).length) return null;
-  if(!d.proveedor){ toast('Escriba el proveedor en la pestaña Recibir'); return null; }
   const id=d.factId||('F'+Date.now());
+  const prev=FACTS.get().find(x=>x.id===id);
   const tot=d.fact.reduce((s,x)=>s+num(x.qty)*num(x.price),0);
   const c=compare(d.lines||[],d.fact);
-  const obj={id, proveedor:d.proveedor, factura:d.factura||'', recibio:d.recibio||'', fecha:today(), lines:d.fact.map(x=>({...x})), total:Math.round(tot),
-    estado:(d.lines||[]).length?`${c.ok}/${c.rows.length} completos`:'Sin recibir', recepcion:recNum||'', guardada:Date.now()};
+  const obj={id, proveedor:(d.proveedor||'').trim()||'Sin proveedor', factura:d.factura||'', recibio:d.recibio||'', fecha:prev?.fecha||today(), lines:d.fact.map(x=>({...x})), total:Math.round(tot),
+    recv:(d.lines||[]).map(l=>({barras:l.barras,descripcion:l.descripcion,cant:num(l.cant)})),
+    estado:!(d.lines||[]).length?'Sin recibir':(c.ok===c.rows.length&&!c.extra.length)?'Completa ✔':`${c.ok}/${c.rows.length} completos`, recepcion:recNum||prev?.recepcion||'', guardada:Date.now()};
   const list=FACTS.get().filter(x=>x.id!==id); list.unshift(obj); FACTS.set(list.slice(0,300));
+  if(FACTS.get()[0]?.id!==id){ toast('El celular está lleno: borre facturas viejas en Historial'); return null; }
   const ph=await IDB.get('draft'); if(ph.length) await IDB.set(id, ph);
-  d.factId=id; saveDraft(); renderHist(); return id;
+  if(st.draft===d){ d.factId=id; LS.set('rdm2-draft',d); } renderHist(); return id;
 }
 const money0=n=>'$'+Math.round(num(n)).toLocaleString('es-CO');
 function renderFacts(){
@@ -521,9 +573,11 @@ async function openFact(f){
     <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem"><tr style="text-align:left;color:var(--muted);font-size:.7rem;text-transform:uppercase"><th>Código</th><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Precio U.</th><th style="text-align:right">Total</th></tr>
       ${f.lines.map(x=>`<tr style="border-top:1px solid var(--line)"><td class="mono">${esc(x.code)}</td><td>${esc(x.desc)}</td><td class="mono" style="text-align:right">${num(x.qty)}</td><td class="mono" style="text-align:right">${money0(x.price)}</td><td class="mono" style="text-align:right">${money0(num(x.qty)*num(x.price))}</td></tr>`).join('')}
       <tr style="border-top:2px solid var(--ink)"><td colspan="4"><b>Total (antes de IVA)</b></td><td class="mono" style="text-align:right"><b>${money0(f.total)}</b></td></tr></table></div>
-    <div class="btns"><button id="x">Cerrar</button><button class="primary" id="fLoad">Abrir para comparar</button><span id="fDelW"><button class="ghost" id="fDel">Eliminar</button></span></div>`;
+    ${(f.recv||[]).length?`<div class="note">Estado: <b>${esc(f.estado)}</b>${(()=>{ const c=compare(f.recv,f.lines); const bad=c.rows.filter(r=>r.rec!==r.g.qty); return bad.length?'<br>'+bad.map(r=>`${esc(r.g.desc)}: factura ${r.g.qty}, llegó ${r.rec}`).join('<br>'):''; })()}</div>`:''}
+    <div class="btns"><button id="x">Cerrar</button><button class="primary" id="fLoad">Abrir para comparar</button><button id="fXls2">⬇ Descargar Excel</button><span id="fDelW"><button class="ghost" id="fDel">Eliminar</button></span></div>`;
+  $('#fXls2').onclick=()=>downloadCmp(f, f.lines, f.recv||[]);
   $('#x').onclick=()=>{ urls.forEach(u=>URL.revokeObjectURL(u)); close(); };
-  $('#fLoad').onclick=async()=>{ st.draft.fact=f.lines.map(x=>({...x})); st.draft.factId=f.id; st.draft.proveedor=f.proveedor; st.draft.factura=f.factura; $('#h-proveedor').value=f.proveedor; $('#h-factura').value=f.factura;
+  $('#fLoad').onclick=async()=>{ if(!st.draft.lines.length && (f.recv||[]).length) st.draft.lines=f.recv.map(l=>({...l})); st.draft.fact=f.lines.map(x=>({...x})); st.draft.factId=f.id; st.draft.proveedor=f.proveedor==='Sin proveedor'?'':f.proveedor; st.draft.factura=f.factura; $('#h-proveedor').value=st.draft.proveedor; $('#h-factura').value=f.factura;
     await IDB.set('draft', await IDB.get(f.id)); saveDraft(); close(); render(); document.querySelector('nav button[data-tab=fact]').click(); toast('Factura abierta'); };
   $('#fDel').onclick=()=>{ $('#fDelW').innerHTML='<button class="ghost" id="fDelY" style="color:var(--warn)">Sí, eliminar</button>'; $('#fDelY').onclick=()=>{ FACTS.set(FACTS.get().filter(x=>x.id!==f.id)); IDB.del(f.id); if(st.draft.factId===f.id){ st.draft.factId=null; saveDraft(); } close(); renderFacts(); toast('Factura eliminada'); }; };
 }
@@ -557,6 +611,14 @@ $('#btnShare').onclick=async()=>{ const url=location.origin+location.pathname;
   if(navigator.share){ try{ await navigator.share({title:'Recepción Don Manuel',text:'App de recepción de mercancía',url}); return; }catch(e){ if(e&&e.name==='AbortError') return; } }
   try{ await navigator.clipboard.writeText(url); toast('Link copiado: péguelo donde quiera'); return; }catch(e){}
   $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="lbl">Mantenga presionado el link para copiarlo</div><input id="shareUrl" readonly value="${url}" style="font:500 1rem var(--f-mono)"><button id="x">Cerrar</button>`; $('#shareUrl').select(); $('#x').onclick=close; };
+const HELP={
+  recibir:['Recibir mercancía',['Escriba el <b>proveedor</b>, el número de factura y su <b>nombre</b>.','Toque <b>📷 Escanear con cámara</b> y apunte al código de barras.','Sale el nombre del producto: escriba <b>cuántos llegaron</b> y toque Agregar. Si ya cargó la factura, la cantidad sale escrita sola.','Si el producto no está en la lista, escriba el nombre una vez: la próxima vez sale solo.','Al terminar toque <b>Guardar recepción</b>.'],'Todo se guarda en el celular mientras trabaja: si se apaga o se va el internet, al abrir la app sigue donde iba.'],
+  fact:['Factura del proveedor',['Toque <b>📷 Tomar foto de una página</b>. Si la factura tiene varias páginas, tome una foto por cada una.','Toque <b>Leer páginas</b> y espere: la app saca los productos y la factura <b>queda guardada sola</b>.','Revise la tabla y corrija lo que el lector haya leído mal (se guarda solo).','Para comparar: escanee los productos, o escriba en <b>Llegó</b> cuántos llegaron de cada uno.','Si llegó todo bien, toque <b>✓ Llegó todo completo</b> y corrija solo lo que faltó.','Toque <b>⬇ Descargar Excel</b> para tener la comparación en Excel.'],'Para que lea bien: factura sobre una mesa, buena luz, sin sombras y que se vea toda la hoja.'],
+  hist:['Historial',['<b>Facturas</b>: todas las facturas guardadas con sus fotos. Toque una para verla, descargar el Excel o abrirla otra vez para comparar.','<b>Recepciones</b>: lo que se ha recibido y guardado.'],'Se guarda en este celular. Si borra los datos del navegador o desinstala la app, se pierde.']};
+$('#btnHelp').onclick=()=>{ const tab=document.querySelector('nav button[aria-selected=true]')?.dataset.tab||'recibir', [t,steps,tip]=HELP[tab];
+  $('#ov').hidden=false; $('#sheet').innerHTML=`<div class="pname">❓ ${t}</div><ol class="steps">${steps.map(s=>`<li>${s}</li>`).join('')}</ol><div class="note">💡 ${tip}</div>
+    <div class="btns">${Object.keys(HELP).filter(k=>k!==tab).map(k=>`<button class="ghost" data-h2="${k}">Ayuda de ${HELP[k][0]}</button>`).join('')}<button class="primary" id="x" style="flex:1">Entendido</button></div>`;
+  $('#x').onclick=close; $('#sheet').querySelectorAll('[data-h2]').forEach(b=>b.onclick=()=>{ document.querySelector(`nav button[data-tab=${b.dataset.h2}]`).click(); $('#btnHelp').click(); }); };
 if(isDesk()) $('#code').focus();
 })();
 </script>
