@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#1d4d2b"><meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="manifest.json"><link rel="icon" href="../icons/registradora-192.png"><link rel="apple-touch-icon" href="../icons/registradora-192.png">
+<title>Registradora Don Manuel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+:root{--bg:#eef1ec;--surface:#fff;--sunk:#e2e7df;--ink:#16241a;--muted:#5b6b5f;--line:#cdd6cb;--accent:#1d6b3a;--accent-ink:#fff;--scan:#e3a21a;--scan-ink:#1d1606;--warn:#a85600;--warn-bg:#fdf0e1;
+  --f-ui:"Archivo",system-ui,-apple-system,"Segoe UI",sans-serif;--f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1611;--surface:#162019;--sunk:#1c2a20;--ink:#e3ede5;--muted:#93a597;--line:#2a3a2e;--accent:#4cc27a;--accent-ink:#06210f;--scan:#f0b43a;--warn:#f0a24a;--warn-bg:#33240f;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1611;--surface:#162019;--sunk:#1c2a20;--ink:#e3ede5;--muted:#93a597;--line:#2a3a2e;--accent:#4cc27a;--accent-ink:#06210f;--scan:#f0b43a;--warn:#f0a24a;--warn-bg:#33240f;color-scheme:dark}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font:16px/1.4 var(--f-ui);margin:0}
+.wrap{max-width:720px;margin:0 auto;padding:10px 16px 150px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px}
+h1{margin:0;font-size:1.25rem;font-weight:800}.sub{color:var(--muted);font-size:.8rem}
+button,.btn{font:600 1rem var(--f-ui);border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:11px 16px;cursor:pointer}
+.primary{background:var(--accent)!important;color:var(--accent-ink)!important;border-color:var(--accent)!important}
+.scanbtn{background:var(--scan)!important;color:var(--scan-ink)!important;border-color:var(--scan)!important}
+.ghost{background:none;border-color:transparent;color:var(--muted)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+input{font:500 1.05rem var(--f-ui);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px;width:100%;min-width:0}
+.mono{font-family:var(--f-mono)}
+.scanbox{background:var(--ink);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.scanbox .in{display:grid;grid-template-columns:1fr auto;gap:8px}
+.scanbox input{font:500 1.25rem var(--f-mono);border:2px solid var(--scan)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.cam{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3;max-height:38vh}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cam .guide{position:absolute;left:8%;right:8%;top:33%;bottom:33%;border:3px solid var(--scan);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+.cam .stop{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;border-color:rgba(255,255,255,.3);padding:8px 12px}
+.res{display:flex;flex-direction:column;border-radius:10px;overflow:hidden;background:var(--surface)}
+.res button{border:0;border-bottom:1px solid var(--line);border-radius:0;text-align:left;font-weight:500;display:flex;justify-content:space-between;gap:10px}
+.list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+.it{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.it:last-child{border-bottom:0}.it.flash{background:color-mix(in srgb,var(--scan) 28%,var(--surface))}
+.it .n{font-weight:600}.it .c{font:.78rem var(--f-mono);color:var(--muted)}
+.it .sub2{font:600 1.1rem var(--f-mono);text-align:right}
+.qrow{display:flex;align-items:center;gap:6px;grid-column:1/-1}
+.qrow button{padding:6px 14px;font-size:1.2rem;line-height:1}
+.qrow input{width:64px;text-align:center;padding:6px;font:600 1.05rem var(--f-mono)}
+.qrow .pr{margin-left:auto;font:500 .9rem var(--f-mono);color:var(--muted);background:none;border:1px dashed var(--line);padding:6px 10px}
+.empty{border:1px dashed var(--line);border-radius:12px;padding:18px;color:var(--muted)}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));z-index:10}
+.bar .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
+.tot{font:600 2rem var(--f-mono);line-height:1}.tot small{display:block;font:600 .72rem var(--f-ui);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.bar .primary{font-size:1.2rem;padding:14px 22px}
+.overlay{position:fixed;inset:0;background:rgba(10,20,14,.55);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.sheet{max-height:92vh;overflow:auto;background:var(--surface);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+@media (min-width:700px){.overlay{align-items:center}.sheet{border-radius:16px}}
+.pname{font-size:1.3rem;font-weight:800;line-height:1.2}
+.big{font:600 2.2rem var(--f-mono)!important;text-align:center;padding:12px!important}
+.lbl{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grid3 button{font-family:var(--f-mono)}
+.seg{display:flex;gap:6px}.seg button{flex:1}.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.change{background:var(--sunk);border-radius:12px;padding:12px;text-align:center}
+.change b{display:block;font:600 2.4rem var(--f-mono)}
+.note{font-size:.82rem;color:var(--muted)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:110px;background:var(--ink);color:var(--bg);padding:11px 16px;border-radius:10px;font-weight:600;z-index:40;max-width:calc(100% - 32px)}
+.chip{font:600 .7rem var(--f-ui);text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:99px;background:var(--warn-bg);color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:.9rem}td,th{padding:6px 4px;border-top:1px solid var(--line);text-align:left}th{color:var(--muted);font-size:.7rem;text-transform:uppercase}
+@media print{body *{visibility:hidden}#ticket,#ticket *{visibility:visible}#ticket{position:absolute;left:0;top:0;width:58mm;font:12px monospace;color:#000}}
+</style></head><body>
+<div class="wrap">
+  <header><div><h1>Registradora</h1><div class="sub" id="status">Cargando precios…</div></div>
+    <div class="btns"><button id="btnDay" style="padding:8px 12px;font-size:.9rem">📊 Ventas hoy</button><button id="btnCfg" style="padding:8px 12px;font-size:.9rem" aria-label="Ajustes">⚙</button></div></header>
+  <div class="scanbox">
+    <div class="cam" id="cam" hidden><video id="video" playsinline muted></video><div class="guide"></div><button class="stop" id="btnStop">Cerrar cámara</button></div>
+    <div class="in"><input id="code" autocomplete="off" placeholder="Código o nombre…"><button class="scanbtn" id="btnGo">OK</button></div>
+    <div class="res" id="res" hidden></div>
+    <div class="btns"><button class="scanbtn" id="btnCam">📷 Escanear con cámara</button></div>
+  </div>
+  <div id="items"></div>
+</div>
+<div class="bar"><div class="in"><div class="tot"><small id="cnt">0 productos</small><span id="total">$0</span></div><button class="primary" id="btnPay" disabled>Cobrar</button></div></div>
+<div class="overlay" id="ov" hidden><div class="sheet" id="sheet"></div></div>
+<div class="toast" id="toast" hidden></div>
+<div id="ticket" hidden></div>
+<script>
+(() => {
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>{const n=parseFloat(String(v??'').replace(/\./g,'').replace(',','.'));return isFinite(n)?n:0;};
+const $$=n=>'$'+Math.round(n).toLocaleString('es-CO');
+const LS={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true;}catch(e){return false;}}};
+const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);};
+let tT;function toast(m){const t=$('#toast');t.textContent=m;t.hidden=false;clearTimeout(tT);tT=setTimeout(()=>t.hidden=true,2000);}
+let ac;function beep(ok){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=ok?1250:300;g.gain.value=.1;o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+(ok?.1:.3));}catch(e){} try{navigator.vibrate&&navigator.vibrate(ok?50:[80,60,80]);}catch(e){}}
+const isDesk=()=>matchMedia('(pointer:fine)').matches;
+
+/* products: code -> {n,p}; own prices typed in the app win */
+const P=new Map(); let ALL=[]; const OWN=LS.get('reg-own',{});
+const priceOf=c=>OWN[c]!=null?OWN[c]:(P.get(c)?.p||0);
+async function load(){
+  try{ const d=await (await fetch('precios.json')).json(); for(const [b,n,p] of d.items){ P.set(b,{n,p}); } $('#status').textContent=`${P.size.toLocaleString('es-CO')} productos · precios ${d.fecha}`; }
+  catch(e){ $('#status').textContent='No se pudieron cargar los precios. Abra con internet una vez.'; }
+  for(const [c,o] of Object.entries(LS.get('reg-new',{}))) if(!P.has(c)) P.set(c,{n:o.n,p:o.p});
+  ALL=[...P.entries()].map(([c,x])=>({c,n:x.n,l:x.n.toLowerCase()}));
+}
+function find(code){ code=String(code).trim(); const v=[code,code.replace(/^0+/,'')]; if(/^\d{12}$/.test(code)) v.push('0'+code); for(const c of v){ if(P.has(c)) return c; } return null; }
+
+/* cart (kept on the phone so nothing is lost if the app closes) */
+let cart=LS.get('reg-cart',[]); const saveCart=()=>LS.set('reg-cart',cart);
+function add(c,qty=1){
+  const x=P.get(c); const i=cart.findIndex(l=>l.c===c);
+  if(i>=0){ const l=cart.splice(i,1)[0]; l.q+=qty; cart.unshift(l); } else cart.unshift({c,n:x.n,p:priceOf(c),q:qty});
+  saveCart(); render(true);
+  if(!priceOf(c)) askPrice(0);
+}
+function render(flash){
+  const T=cart.reduce((s,l)=>s+l.p*l.q,0), U=cart.reduce((s,l)=>s+l.q,0);
+  $('#total').textContent=$$(T); $('#cnt').textContent=`${U} producto${U===1?'':'s'}`; $('#btnPay').disabled=!cart.length;
+  $('#items').innerHTML=cart.length?`<div class="list">${cart.map((l,i)=>`<div class="it" data-i="${i}"><div style="min-width:0"><div class="n">${esc(l.n)}</div><div class="c">${esc(l.c)}${l.p?'':' · <span class="chip">sin precio</span>'}</div></div><div class="sub2">${$$(l.p*l.q)}</div>
+      <div class="qrow"><button data-m aria-label="Menos">−</button><input data-q type="number" inputmode="numeric" value="${l.q}" aria-label="Cantidad"><button data-p aria-label="Más">+</button><button class="pr" data-pr>${$$(l.p)} c/u ✎</button><button class="ghost" data-del aria-label="Quitar" style="padding:6px 10px">✕</button></div></div>`).join('')}</div>
+      <div class="btns" style="justify-content:flex-end"><span id="clrW"><button class="ghost" id="clr">Vaciar venta</button></span></div>`
+    : `<div class="empty"><b>Venta vacía.</b><br>Escanee un producto: se agrega con su precio. Si lo escanea otra vez, suma 1.</div>`;
+  if(cart.length) $('#clr').onclick=()=>{ $('#clrW').innerHTML='<button class="ghost" id="clrY" style="color:var(--warn)">Sí, vaciar</button>'; $('#clrY').onclick=()=>{ cart=[]; saveCart(); render(); }; };
+  if(flash){ const el=$('#items .it'); if(el){ el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),700); } }
+}
+$('#items').addEventListener('click',e=>{ const r=e.target.closest('.it'); if(!r) return; const i=+r.dataset.i, l=cart[i];
+  if(e.target.dataset.m!=null){ l.q=Math.max(1,l.q-1); } else if(e.target.dataset.p!=null){ l.q++; } else if(e.target.dataset.del!=null){ cart.splice(i,1); } else if(e.target.dataset.pr!=null){ askPrice(i); return; } else return;
+  saveCart(); render(); });
+$('#items').addEventListener('change',e=>{ if(e.target.dataset.q==null) return; const i=+e.target.closest('.it').dataset.i; cart[i].q=Math.max(1,num(e.target.value)); saveCart(); render(); });
+
+function sheet(h){ $('#sheet').innerHTML=h; $('#ov').hidden=false; }
+function close(){ $('#ov').hidden=true; $('#sheet').innerHTML=''; paused=false; lastAt=Date.now(); if(isDesk()&&!camOn) $('#code').focus(); }
+$('#ov').addEventListener('click',e=>{ if(e.target.id==='ov') close(); });
+function askPrice(i){ const l=cart[i]; paused=true;
+  sheet(`<div class="pname">${esc(l.n)}</div><div class="note">${esc(l.c)} · ${l.p?'precio actual '+$$(l.p):'este producto no tiene precio'}</div>
+    <div class="lbl">Precio de venta</div><input id="pp" class="big" type="number" inputmode="numeric" value="${l.p||''}" placeholder="0">
+    <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="keep" checked style="width:20px;height:20px"> Guardar este precio para las próximas ventas</label>
+    <div class="btns"><button class="ghost" id="x">Cancelar</button><button class="primary" id="ok" style="flex:1">Listo</button></div>`);
+  setTimeout(()=>{ $('#pp')?.focus(); $('#pp')?.select(); },60);
+  const go=()=>{ const v=num($('#pp').value); if(v<=0){ toast('Escriba el precio'); return; } l.p=v; if($('#keep').checked){ OWN[l.c]=v; LS.set('reg-own',OWN); } saveCart(); render(); close(); };
+  $('#ok').onclick=go; $('#pp').onkeydown=e=>{ if(e.key==='Enter') go(); }; $('#x').onclick=close; }
+
+/* new product not in list */
+function askNew(code){ paused=true; beep(false);
+  sheet(`<div class="pname">Producto no está en la lista</div><div class="note mono">${esc(code)}</div>
+    <div class="lbl">Nombre</div><input id="nn" autocomplete="off" placeholder="Nombre del producto">
+    <div class="lbl">Precio de venta</div><input id="np" class="big" type="number" inputmode="numeric" placeholder="0">
+    <div class="note">Queda guardado en este celular para la próxima vez.</div>
+    <div class="btns"><button class="ghost" id="x">Cancelar</button><button class="primary" id="ok" style="flex:1">Agregar</button></div>`);
+  setTimeout(()=>$('#nn')?.focus(),60);
+  const go=()=>{ const n=$('#nn').value.trim().toUpperCase(), p=num($('#np').value); if(!n){ toast('Escriba el nombre'); return; } if(p<=0){ toast('Escriba el precio'); return; }
+    const nw=LS.get('reg-new',{}); nw[code]={n,p}; LS.set('reg-new',nw); P.set(code,{n,p}); OWN[code]=p; LS.set('reg-own',OWN); ALL.push({c:code,n,l:n.toLowerCase()}); close(); add(code); };
+  $('#ok').onclick=go; $('#nn').onkeydown=e=>{ if(e.key==='Enter') $('#np').focus(); }; $('#np').onkeydown=e=>{ if(e.key==='Enter') go(); }; $('#x').onclick=close; }
+
+/* input: code or name search */
+let paused=false;
+function onCode(raw){ const q=String(raw||'').trim(); $('#code').value=''; $('#res').hidden=true; if(!q) return;
+  const c=find(q); if(c){ beep(true); add(c); toast(`${P.get(c).n}  ${$$(priceOf(c))}`); return; }
+  if(/^[A-Z]?\d{3,14}$/i.test(q)) return askNew(q);
+  search(q,true); }
+function search(q,show){ q=q.toLowerCase().trim(); const box=$('#res'); if(q.length<3||/^\d+$/.test(q)){ box.hidden=true; return; }
+  const w=q.split(/\s+/); const r=ALL.filter(p=>w.every(x=>p.l.includes(x))).slice(0,8);
+  box.hidden=!r.length; if(!r.length&&show) toast('No se encontró');
+  box.innerHTML=r.map((p,i)=>`<button data-c="${esc(p.c)}"><span>${esc(p.n)}</span><b class="mono">${$$(priceOf(p.c))}</b></button>`).join(''); }
+$('#res').addEventListener('click',e=>{ const b=e.target.closest('button[data-c]'); if(!b) return; $('#code').value=''; $('#res').hidden=true; add(b.dataset.c); beep(true); });
+$('#code').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); onCode(e.target.value); } });
+$('#code').addEventListener('input',e=>search(e.target.value,false));
+$('#btnGo').onclick=()=>onCode($('#code').value);
+
+/* camera */
+let stream=null, camOn=false, det=null, zx=null, lastCode='', lastAt=0;
+const video=$('#video'), cv=document.createElement('canvas'), cx=cv.getContext('2d',{willReadFrequently:true});
+$('#btnCam').onclick=async()=>{
+  try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false}); }
+  catch(e){ toast(e.name==='NotAllowedError'?'Permita la cámara para este sitio':'No se pudo abrir la cámara'); return; }
+  video.srcObject=stream; await video.play().catch(()=>{}); $('#cam').hidden=false; $('#btnCam').hidden=true; camOn=true;
+  if('BarcodeDetector' in window){ try{ const sup=await BarcodeDetector.getSupportedFormats(); const w=['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf'].filter(x=>sup.includes(x)); if(w.length) det=new BarcodeDetector({formats:w}); }catch(e){} }
+  if(!det && window.ZXing){ const Z=ZXing,h=new Map(); h.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13,Z.BarcodeFormat.EAN_8,Z.BarcodeFormat.UPC_A,Z.BarcodeFormat.UPC_E,Z.BarcodeFormat.CODE_128,Z.BarcodeFormat.CODE_39,Z.BarcodeFormat.ITF]); zx=new Z.MultiFormatReader(); zx.setHints(h); }
+  loop(); };
+function stopCam(){ camOn=false; if(stream) stream.getTracks().forEach(t=>t.stop()); stream=null; $('#cam').hidden=true; $('#btnCam').hidden=false; }
+$('#btnStop').onclick=stopCam; document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopCam(); });
+async function loop(){ if(!camOn) return;
+  if(!paused && video.readyState>=2){ let code=null;
+    try{ if(det){ const r=await det.detect(video); if(r.length) code=r[0].rawValue; }
+      else if(zx){ const vw=video.videoWidth,vh=video.videoHeight,sw=Math.round(vw*.84),sh=Math.round(vh*.4); cv.width=sw; cv.height=sh; cx.drawImage(video,(vw-sw)/2,(vh-sh)/2,sw,sh,0,0,sw,sh);
+        try{ code=zx.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(cv)))).getText(); }catch(e){ zx.reset(); } } }catch(e){}
+    if(code && !(code===lastCode && Date.now()-lastAt<1800)){ lastCode=code; lastAt=Date.now(); onCode(code); } }
+  setTimeout(()=>requestAnimationFrame(loop), det?80:140); }
+
+/* pay */
+let method='Efectivo';
+$('#btnPay').onclick=()=>{ const T=cart.reduce((s,l)=>s+l.p*l.q,0); if(cart.some(l=>!l.p)){ toast('Hay productos sin precio'); return; } paused=true;
+  const bills=[...new Set([T, Math.ceil(T/10000)*10000, Math.ceil(T/20000)*20000, Math.ceil(T/50000)*50000, 100000].filter(v=>v>=T))].slice(0,6);
+  sheet(`<div class="lbl">Total a pagar</div><div class="pname mono" style="font-size:2.4rem">${$$(T)}</div>
+    <div class="seg">${['Efectivo','Transferencia','Tarjeta'].map(m=>`<button data-me="${m}" aria-pressed="${m===method}">${m}</button>`).join('')}</div>
+    <div id="cashW"><div class="lbl">Recibe</div><input id="cash" class="big" type="number" inputmode="numeric" placeholder="0">
+      <div class="grid3" style="margin-top:8px">${bills.map(b=>`<button data-b="${b}">${b===T?'Exacto':$$(b)}</button>`).join('')}</div>
+      <div class="change" style="margin-top:10px"><span class="lbl">Cambio</span><b id="chg">$0</b></div></div>
+    <div class="btns"><button class="ghost" id="x">Volver</button><button class="primary" id="ok" style="flex:1">✔ Venta hecha</button></div>`);
+  const upd=()=>{ const c=num($('#cash').value)-T; $('#chg').textContent=num($('#cash').value)?(c>=0?$$(c):'Faltan '+$$(-c)):'$0'; $('#chg').style.color=c<0&&num($('#cash').value)?'var(--warn)':''; };
+  const setM=m=>{ method=m; $('#sheet').querySelectorAll('[data-me]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.me===m))); $('#cashW').hidden=m!=='Efectivo'; };
+  setM(method); $('#cash').oninput=upd; $('#sheet').querySelectorAll('[data-b]').forEach(b=>b.onclick=()=>{ $('#cash').value=b.dataset.b; upd(); });
+  $('#sheet').querySelectorAll('[data-me]').forEach(b=>b.onclick=()=>setM(b.dataset.me));
+  if(method==='Efectivo') setTimeout(()=>$('#cash')?.focus(),60);
+  $('#x').onclick=close;
+  $('#ok').onclick=()=>{ const cash=num($('#cash').value); if(method==='Efectivo'&&cash&&cash<T){ toast('Falta dinero'); return; }
+    const t=new Date(), sales=LS.get('reg-sales',[]); const n=(LS.get('reg-n',0)||0)+1; LS.set('reg-n',n);
+    const s={n, fecha:today(), hora:t.toTimeString().slice(0,5), metodo:method, total:T, recibe:method==='Efectivo'?(cash||T):T, cambio:method==='Efectivo'&&cash?cash-T:0, lines:cart.map(l=>({c:l.c,n:l.n,p:l.p,q:l.q}))};
+    sales.unshift(s); if(!LS.set('reg-sales',sales.slice(0,3000))) LS.set('reg-sales',sales.slice(0,800));
+    cart=[]; saveCart(); render(); beep(true);
+    sheet(`<div class="change"><span class="lbl">Venta #${n} guardada</span><b>${s.cambio?'Cambio '+$$(s.cambio):$$(T)}</b><span class="note">${esc(method)}</span></div>
+      <div class="btns"><button id="pr">🧾 Imprimir tiquete</button><button class="primary" id="x" style="flex:1">Nueva venta</button></div>`);
+    $('#x').onclick=close; $('#pr').onclick=()=>printTicket(s); };
+};
+function printTicket(s){ $('#ticket').hidden=false;
+  $('#ticket').innerHTML=`<div style="text-align:center"><b>MERCADOS DON MANUEL</b><br>Villa de Leyva<br>Venta #${s.n} · ${s.fecha} ${s.hora}</div><hr>${s.lines.map(l=>`${esc(l.n)}<br>${l.q} x ${$$(l.p)} = ${$$(l.p*l.q)}`).join('<br>')}<hr><b>TOTAL ${$$(s.total)}</b><br>${esc(s.metodo)}${s.cambio?`<br>Recibe ${$$(s.recibe)} · Cambio ${$$(s.cambio)}`:''}<br><br><div style="text-align:center">¡Gracias por su compra!</div>`;
+  setTimeout(()=>{ window.print(); $('#ticket').hidden=true; },100); }
+
+/* day sales */
+$('#btnDay').onclick=()=>{ paused=true; const all=LS.get('reg-sales',[]); const days=[...new Set(all.map(s=>s.fecha))]; let d=days[0]||today();
+  const draw=()=>{ const S=all.filter(s=>s.fecha===d), by={}; S.forEach(s=>by[s.metodo]=(by[s.metodo]||0)+s.total);
+    sheet(`<div class="pname">Ventas ${esc(d)}</div>
+      ${days.length>1?`<select id="dd" style="padding:10px;border-radius:10px;font:inherit;background:var(--surface);color:var(--ink);border:1px solid var(--line)">${days.map(x=>`<option ${x===d?'selected':''}>${x}</option>`).join('')}</select>`:''}
+      <div class="change"><span class="lbl">${S.length} venta${S.length===1?'':'s'}</span><b>${$$(S.reduce((a,s)=>a+s.total,0))}</b><span class="note">${Object.entries(by).map(([m,v])=>`${m}: ${$$(v)}`).join(' · ')||'—'}</span></div>
+      ${S.length?`<div style="overflow-x:auto"><table><tr><th>#</th><th>Hora</th><th>Pago</th><th style="text-align:right">Total</th></tr>${S.map(s=>`<tr data-s="${s.n}" style="cursor:pointer"><td>${s.n}</td><td>${s.hora}</td><td>${esc(s.metodo)}</td><td class="mono" style="text-align:right">${$$(s.total)}</td></tr>`).join('')}</table></div>`:''}
+      <div class="btns"><button id="xl">⬇ Descargar Excel</button><button class="primary" id="x" style="flex:1">Cerrar</button></div>`);
+    $('#x').onclick=close; if($('#dd')) $('#dd').onchange=()=>{ d=$('#dd').value; draw(); };
+    $('#sheet').querySelectorAll('[data-s]').forEach(tr=>tr.onclick=()=>{ const s=S.find(x=>x.n==tr.dataset.s);
+      sheet(`<div class="pname">Venta #${s.n}</div><div class="note">${s.fecha} ${s.hora} · ${esc(s.metodo)}</div><table><tr><th>Producto</th><th>Cant.</th><th style="text-align:right">Valor</th></tr>${s.lines.map(l=>`<tr><td>${esc(l.n)}</td><td>${l.q}</td><td class="mono" style="text-align:right">${$$(l.p*l.q)}</td></tr>`).join('')}</table>
+        <div class="pname mono" style="text-align:right">${$$(s.total)}</div><div class="btns"><button id="pr">🧾 Imprimir</button><button id="bk">Volver</button></div>`);
+      $('#pr').onclick=()=>printTicket(s); $('#bk').onclick=draw; });
+    $('#xl').onclick=()=>{ const rows=[['Venta','Fecha','Hora','Pago','Código','Producto','Cantidad','Precio','Valor']]; S.forEach(s=>s.lines.forEach(l=>rows.push([s.n,s.fecha,s.hora,s.metodo,l.c,l.n,l.q,l.p,l.p*l.q])));
+      const q=v=>{ const t=String(v??''); return /[;"\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t; };
+      const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob(['﻿'+rows.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'})); a.download=`Ventas ${d}.csv`; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500); }; };
+  draw(); };
+
+/* settings */
+$('#btnCfg').onclick=()=>{ paused=true; const own=Object.keys(OWN).length;
+  sheet(`<div class="pname">Ajustes</div>
+    <div class="note">Precios = costo de Starlap + 20 % de utilidad + 19 % de IVA, redondeado a $50. Si un precio está mal, toque el precio en la venta (✎) y cámbielo: queda guardado.</div>
+    <div class="note">Precios cambiados a mano en este celular: <b>${own}</b></div>
+    <div class="btns">${own?'<span id="rsW"><button id="rs">Volver a los precios originales</button></span>':''}<button class="primary" id="x" style="flex:1">Cerrar</button></div>`);
+  $('#x').onclick=close; if(own) $('#rs').onclick=()=>{ $('#rsW').innerHTML='<button id="rsY" style="color:var(--warn)">Sí, borrar mis precios</button>'; $('#rsY').onclick=()=>{ for(const k in OWN) delete OWN[k]; LS.set('reg-own',OWN); close(); toast('Listo'); }; }; };
+
+render(); load().then(()=>{ if(isDesk()) $('#code').focus(); });
+if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost')){ try{ navigator.serviceWorker.register('../sw.js',{scope:'../'}); }catch(e){} }
+})();
+</script></body></html>
