@@ -1,14 +1,21 @@
 // Recepción Don Manuel — funciona sin internet: guarda la app y la lista de productos en el celular
-const CACHE='rdm-v8';
+const CACHE='rdm-v9';
 const CORE=['./','./index.html','./inventario/','./inventario/index.html','./inventario/manifest.json','./pedidos/','./pedidos/index.html','./pedidos/manifest.json','./facturas/','./facturas/index.html','./facturas/manifest.json','./registradora/','./registradora/index.html','./registradora/manifest.json','./registradora/precios.json','./icons/registradora-192.png','./menu/','./menu/index.html','./icons/recepcion-192.png','./icons/facturas-192.png','./icons/inventario-192.png','./icons/pedidos-192.png','https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js','./catalogo.json','./manifest.json','./icon-192.png','./icon-512.png',
   'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js'];
-self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>Promise.allSettled(CORE.map(u=>c.add(new Request(u,{mode:u.startsWith('http')?'no-cors':'same-origin'}))))).then(()=>self.skipWaiting())); });
+self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>Promise.allSettled(CORE.map(u=>c.add(new Request(u,{mode:u.startsWith('http')?'no-cors':'same-origin',cache:'reload'}))))).then(()=>self.skipWaiting())); });
 self.addEventListener('activate',e=>{ e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())); });
 self.addEventListener('fetch',e=>{
   const req=e.request; if(req.method!=='GET') return;
   const url=new URL(req.url);
   if(url.hostname.endsWith('script.google.com')||url.hostname.endsWith('googleusercontent.com')) return; // servidor: siempre en línea
   e.respondWith(caches.open(CACHE).then(async c=>{
+    // lista de productos/precios y páginas: primero internet (siempre lo más nuevo), si no hay, la copia guardada
+    if(url.origin===location.origin && (/\.json$/.test(url.pathname) || req.mode==='navigate')){
+      try{ const r=await fetch(req,{cache:'no-cache'}); if(r&&r.ok){ c.put(req,r.clone()); return r; } }catch(e){}
+      const h=await c.match(req,{ignoreSearch:true}); if(h) return h;
+      if(req.mode==='navigate') return (await c.match('./index.html')) || Response.error();
+      return Response.error();
+    }
     const hit=await c.match(req,{ignoreSearch:url.origin===location.origin});
     const net=fetch(req).then(r=>{ if(r && (r.ok||r.type==='opaque')) c.put(req,r.clone()); return r; }).catch(()=>null);
     if(hit){ e.waitUntil(net); return hit; }
